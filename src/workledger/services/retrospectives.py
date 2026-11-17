@@ -69,13 +69,16 @@ def update_accomplishment(conn: sqlite3.Connection, acc_id: int, data: Accomplis
             value = int(value)
         set_clauses.append(f"{field} = ?")
         params.append(value)
-        conn.execute(
-            "INSERT INTO revisions (entity_type, entity_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?,?)",
-            ("accomplishment", acc_id, field, str(existing[field]), str(value), changed_by),
-        )
     set_clauses.extend(["user_edited = 1", "updated_at = ?"])
     params.extend([now, acc_id])
     with conn:
+        for field, value in updates.items():
+            if field == "is_highlight":
+                value = int(value)
+            conn.execute(
+                "INSERT INTO revisions (entity_type, entity_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?,?)",
+                ("accomplishment", acc_id, field, str(existing[field]), str(value), changed_by),
+            )
         conn.execute(f"UPDATE accomplishments SET {', '.join(set_clauses)} WHERE id = ?", params)
     return get_accomplishment(conn, acc_id)
 
@@ -157,13 +160,16 @@ def update_case(conn: sqlite3.Connection, case_id: int, data: CaseUpdate, change
             value = int(value)
         set_clauses.append(f"{field} = ?")
         params.append(value)
-        conn.execute(
-            "INSERT INTO revisions (entity_type, entity_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?,?)",
-            ("case", case_id, field, str(existing[field]), str(value), changed_by),
-        )
     set_clauses.extend(["user_edited = 1", "updated_at = ?"])
     params.extend([now, case_id])
     with conn:
+        for field, value in updates.items():
+            if field in ("root_cause_confirmed", "verification_done"):
+                value = int(value)
+            conn.execute(
+                "INSERT INTO revisions (entity_type, entity_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?,?)",
+                ("case", case_id, field, str(existing[field]), str(value), changed_by),
+            )
         conn.execute(f"UPDATE cases SET {', '.join(set_clauses)} WHERE id = ?", params)
     return get_case(conn, case_id)
 

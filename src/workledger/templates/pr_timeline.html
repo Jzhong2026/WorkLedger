@@ -10,7 +10,7 @@
     <div class="timeline-dot badge-type"></div>
     <div class="timeline-content card">
         <div class="card-header">
-            <span class="badge badge-type">{{ ev.event_type }}</span>
+            <span class="badge badge-{{ ev.event_type }}">{{ ev.event_type }}</span>
             <a href="/event/{{ ev.id }}"><strong>{{ ev.summary or '(no summary)' }}</strong></a>
         </div>
         <div class="card-meta">

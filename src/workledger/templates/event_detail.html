@@ -5,7 +5,7 @@
 <h1>{{ event.summary or 'Event detail' }}</h1>
 <div class="detail-grid">
     <dl>
-        <dt>Type</dt><dd><span class="badge badge-type">{{ event.event_type }}</span></dd>
+        <dt>Type</dt><dd><span class="badge badge-{{ event.event_type }}">{{ event.event_type }}</span></dd>
         <dt>Occurred</dt><dd>{{ event.occurred_at }}</dd>
         <dt>Recorded</dt><dd>{{ event.recorded_at }}</dd>
         {% if event.repo %}<dt>Repo / PR</dt><dd><a href="/pr?repo={{ event.repo }}&pr_number={{ event.pr_number }}">{{ event.repo }}#{{ event.pr_number }}</a></dd>{% endif %}

@@ -100,15 +100,18 @@ def update_event(conn: sqlite3.Connection, event_id: int, data: EventUpdate, cha
             value = int(value)
         set_clauses.append(f"{field} = ?")
         params.append(value)
-        conn.execute(
-            "INSERT INTO revisions (entity_type, entity_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?,?)",
-            ("work_event", event_id, field, str(existing[field]), str(value), changed_by),
-        )
 
     set_clauses.extend(["user_edited = 1", "updated_at = ?"])
     params.extend([now, event_id])
 
     with conn:
+        for field, value in updates.items():
+            if field in ("root_cause_confirmed", "verification_done"):
+                value = int(value)
+            conn.execute(
+                "INSERT INTO revisions (entity_type, entity_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?,?)",
+                ("work_event", event_id, field, str(existing[field]), str(value), changed_by),
+            )
         conn.execute(
             f"UPDATE work_events SET {', '.join(set_clauses)} WHERE id = ?", params
         )

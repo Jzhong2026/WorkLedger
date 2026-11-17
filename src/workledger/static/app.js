@@ -1,12 +1,24 @@
+function showError(msg, retryable) {
+    let banner = document.querySelector('.error-banner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.className = 'error-banner';
+        document.querySelector('.container').prepend(banner);
+    }
+    banner.innerHTML = `<span>${msg}</span>` + (retryable ? '<button onclick="location.reload()">Retry</button>' : '');
+}
+
 async function api(method, path, body) {
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
     const res = await fetch('/api' + path, opts);
     if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
-        alert(err.error || 'Request failed');
+        showError(err.error || 'Request failed', err.retryable);
         throw new Error(err.error);
     }
+    const banner = document.querySelector('.error-banner');
+    if (banner) banner.remove();
     if (res.status === 204) return null;
     return res.json();
 }

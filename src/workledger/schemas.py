@@ -3,8 +3,18 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Literal
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def _validate_url(v: str | None) -> str | None:
+    if v is None or v == "":
+        return None
+    scheme = urlparse(v).scheme.lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(f"URL must use http or https scheme, got: {scheme or '(none)'}")
+    return v
 
 EventType = Literal[
     "pr_created", "review_finding", "comment_analysis",
@@ -33,6 +43,11 @@ class EventCreate(BaseModel):
     reply_status: ReplyStatus | None = None
     extra_json: str | None = None
 
+    @field_validator("evidence_url")
+    @classmethod
+    def check_evidence_url(cls, v):
+        return _validate_url(v)
+
 
 class EventUpdate(BaseModel):
     summary: str | None = None
@@ -45,6 +60,11 @@ class EventUpdate(BaseModel):
     reply_status: ReplyStatus | None = None
     jira_key: str | None = None
     extra_json: str | None = None
+
+    @field_validator("evidence_url")
+    @classmethod
+    def check_evidence_url(cls, v):
+        return _validate_url(v)
 
 
 class EventOut(BaseModel):
@@ -118,6 +138,11 @@ class AccomplishmentCreate(BaseModel):
     tags: str | None = None
     source_key: str | None = None
 
+    @field_validator("impact_evidence_url")
+    @classmethod
+    def check_url(cls, v):
+        return _validate_url(v)
+
 
 class AccomplishmentUpdate(BaseModel):
     title: str | None = None
@@ -126,6 +151,11 @@ class AccomplishmentUpdate(BaseModel):
     impact_evidence_url: str | None = None
     is_highlight: bool | None = None
     tags: str | None = None
+
+    @field_validator("impact_evidence_url")
+    @classmethod
+    def check_url(cls, v):
+        return _validate_url(v)
 
 
 class AccomplishmentOut(BaseModel):

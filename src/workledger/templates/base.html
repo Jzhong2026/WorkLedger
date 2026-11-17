@@ -10,10 +10,10 @@
 <nav class="nav">
     <a href="/" class="nav-brand">WorkLedger</a>
     <div class="nav-links">
-        <a href="/">Today</a>
-        <a href="/search">Search</a>
-        <a href="/todos">To-dos</a>
-        <a href="/retrospective">Retrospective</a>
+        <a href="/" class="{{ 'active' if request.url.path == '/' }}">Today</a>
+        <a href="/search" class="{{ 'active' if request.url.path == '/search' }}">Search</a>
+        <a href="/todos" class="{{ 'active' if request.url.path == '/todos' }}">To-dos</a>
+        <a href="/retrospective" class="{{ 'active' if request.url.path == '/retrospective' }}">Retrospective</a>
     </div>
 </nav>
 <main class="container">

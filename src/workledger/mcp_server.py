@@ -495,6 +495,28 @@ def export_narrative(period: str = "year") -> str:
         return _err(e)
 
 
+# --- Insights & evidence ---
+
+@mcp.tool()
+def get_insights() -> str:
+    """Aggregated insights: totals, events by type/repo/project/month, top root causes, todo status, snapshot count."""
+    try:
+        from .services import insights
+        return json.dumps(insights.get_insights(_conn()), ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def snapshot_evidence(event_id: int) -> str:
+    """Fetch and store the evidence URL content for an event so it survives link rot. Best-effort; reports captured/failed/inaccessible."""
+    try:
+        from .services import evidence
+        return json.dumps(evidence.capture_snapshot(_conn(), event_id), ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
 def main():
     mcp.run()
 

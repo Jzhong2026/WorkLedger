@@ -438,3 +438,19 @@ def export_narrative(data: dict):
     if not result.get("ok"):
         raise HTTPException(503, result.get("error", "Agent unavailable"))
     return {"period": period, "narrative": result["narrative"]}
+
+
+# --- Insights ---
+
+@router.get("/insights")
+def get_insights():
+    from ..services import insights
+    return insights.get_insights(_conn())
+
+
+# --- Evidence snapshot ---
+
+@router.post("/events/{event_id}/snapshot")
+def snapshot_event(event_id: int):
+    from ..services import evidence
+    return evidence.capture_snapshot(_conn(), event_id)

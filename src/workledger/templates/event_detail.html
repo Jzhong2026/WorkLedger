@@ -27,6 +27,21 @@
     <h2>Verification {% if not event.verification_done %}<span class="badge badge-warn">pending</span>{% endif %}</h2>
     <p>{{ event.verification_result }}</p>
     {% endif %}
+
+    {% if event.evidence_url %}
+    <div class="snapshot-box">
+        <h2>Evidence snapshot
+            {% if event.snapshot_status %}<span class="badge badge-{{ 'ok' if event.snapshot_status == 'captured' else 'warn' }}">{{ event.snapshot_status }}</span>{% endif %}
+        </h2>
+        <div class="card-actions">
+            <button onclick="captureSnapshot({{ event.id }})">{{ 'Re-capture' if event.snapshot_status else 'Capture snapshot' }}</button>
+        </div>
+        {% if event.evidence_snapshot %}
+        <p class="meta">Captured {{ event.snapshot_at }} · {{ event.evidence_snapshot|length }} chars</p>
+        <div class="snapshot-text">{{ event.evidence_snapshot }}</div>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
 
 <h2>Edit</h2>

@@ -100,6 +100,12 @@ async function addAccomplishment(e) {
     return false;
 }
 
+async function captureSnapshot(id) {
+    const btn = event.target; btn.disabled = true; btn.textContent = 'Capturing…';
+    try { await api('POST', '/events/' + id + '/snapshot'); location.reload(); }
+    catch (err) { btn.disabled = false; btn.textContent = 'Capture snapshot'; }
+}
+
 async function generateNarrative(period) {
     const box = document.getElementById('narrative-box');
     box.innerHTML = '<div class="card"><p>Synthesizing narrative…</p></div>';

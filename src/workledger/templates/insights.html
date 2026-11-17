@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Insights - WorkLedger{% endblock %}
+{% block content %}
+<h1>Insights <small>where your work goes</small></h1>
+
+<div class="stat-row">
+    <div class="stat"><div class="stat-num">{{ data.totals.events }}</div><div class="stat-label">Events</div></div>
+    <div class="stat gold"><div class="stat-num">{{ data.totals.accomplishments }}</div><div class="stat-label">Accomplishments</div></div>
+    <div class="stat rust"><div class="stat-num">{{ data.totals.cases }}</div><div class="stat-label">Cases</div></div>
+</div>
+<div class="stat-row">
+    <div class="stat"><div class="stat-num">{{ data.totals.highlights }}</div><div class="stat-label">Highlights</div></div>
+    <div class="stat gold"><div class="stat-num">{{ data.totals.todos }}</div><div class="stat-label">To-dos</div></div>
+    <div class="stat rust"><div class="stat-num">{{ data.totals.snapshots }}</div><div class="stat-label">Snapshots</div></div>
+</div>
+
+<div class="chart-grid">
+    <div class="card chart-card"><h2>Events over time</h2><canvas id="chart-month"></canvas></div>
+    <div class="card chart-card"><h2>By type</h2><canvas id="chart-type"></canvas></div>
+    <div class="card chart-card"><h2>By repository</h2><canvas id="chart-repo"></canvas></div>
+    <div class="card chart-card"><h2>To-do status</h2><canvas id="chart-todo"></canvas></div>
+</div>
+
+<h2>Common root causes</h2>
+{% if data.root_causes %}
+<div class="card-list">
+{% for rc in data.root_causes %}
+<div class="card">
+    <div class="card-header"><span class="badge badge-warn">{{ rc.value }}×</span><strong>{{ rc.label }}</strong></div>
+</div>
+{% endfor %}
+</div>
+<p class="meta">Root cause confirmation: {{ data.root_cause_confirmation.confirmed }} / {{ data.root_cause_confirmation.with_cause }} confirmed</p>
+{% else %}
+<p class="empty">No root causes recorded yet.</p>
+{% endif %}
+
+<script id="insights-data" type="application/json">{{ data_json | safe }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/vendor/chart.umd.min.js"></script>
+<script>
+const D = JSON.parse(document.getElementById('insights-data').textContent);
+const palette = ['#0E7466','#B98A2F','#B4552D','#7A4E8C','#2F6B9A','#B04A69','#5F7A4E','#9A917D'];
+Chart.defaults.font.family = "'Inter', sans-serif";
+Chart.defaults.color = '#57503F';
+
+function bar(id, rows, horizontal) {
+    new Chart(document.getElementById(id), {
+        type: 'bar',
+        data: { labels: rows.map(r=>r.label), datasets: [{ data: rows.map(r=>r.value), backgroundColor: palette, borderRadius: 5 }] },
+        options: { indexAxis: horizontal?'y':'x', plugins:{legend:{display:false}}, scales:{x:{grid:{display:!horizontal}},y:{grid:{display:horizontal}}} }
+    });
+}
+function doughnut(id, rows) {
+    new Chart(document.getElementById(id), {
+        type: 'doughnut',
+        data: { labels: rows.map(r=>r.label), datasets: [{ data: rows.map(r=>r.value), backgroundColor: palette, borderColor:'#FFFDF8', borderWidth:2 }] },
+        options: { plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:10,font:{size:11}}}} }
+    });
+}
+bar('chart-month', D.by_month, false);
+doughnut('chart-type', D.by_type);
+bar('chart-repo', D.by_repo, true);
+doughnut('chart-todo', D.todo_status);
+</script>
+{% endblock %}

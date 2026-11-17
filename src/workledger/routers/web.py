@@ -120,3 +120,13 @@ def inbox_page(request: Request):
     notes = inbox.list_notes(conn)
     drafts = inbox.list_drafts(conn, status="pending")
     return templates.TemplateResponse(request, "inbox.html", {"notes": notes, "drafts": drafts})
+
+
+@router.get("/insights")
+def insights_page(request: Request):
+    import json
+    from ..services import insights
+    data = insights.get_insights(_conn())
+    return templates.TemplateResponse(request, "insights.html", {
+        "data": data, "data_json": json.dumps(data, ensure_ascii=False),
+    })

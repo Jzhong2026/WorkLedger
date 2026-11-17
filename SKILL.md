@@ -49,7 +49,7 @@ Or if installed as a package:
 
 ## Tools
 
-29 tools total. Tools marked 🔑 require the built-in agent (CodeBuddy API key); all others work offline.
+31 tools total. Tools marked 🔑 require the built-in agent (CodeBuddy API key); all others work offline.
 
 ### Work events
 | Tool | Purpose |
@@ -97,6 +97,12 @@ Or if installed as a package:
 |------|---------|
 | `create_project` / `list_projects` / `update_project` / `delete_project` | Manage projects (name/key/repo/color/archive) |
 | `create_sprint` / `list_sprints` / `update_sprint` / `delete_sprint` | Manage sprints (one active per project) |
+
+### Insights & evidence
+| Tool | Purpose |
+|------|---------|
+| `get_insights` | Aggregates: totals, events by type/repo/project/month, top root causes, todo status |
+| `snapshot_evidence` | Fetch + store an event's evidence URL content to survive link rot (best-effort) |
 
 ### Inbox workflow
 

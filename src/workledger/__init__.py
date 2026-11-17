@@ -1,0 +1,1 @@
+"""WorkLedger - local-first personal work assistant."""

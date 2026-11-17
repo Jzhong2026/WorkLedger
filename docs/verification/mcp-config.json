@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "workledger": {
+      "command": "D:/AI/Projects/WorkLedger/.venv/Scripts/python.exe",
+      "args": ["-m", "workledger.mcp_server"],
+      "cwd": "D:/AI/Projects/WorkLedger",
+      "env": {
+        "WORKLEDGER_DATA_DIR": "D:/AI/Projects/WorkLedger/data"
+      }
+    }
+  }
+}

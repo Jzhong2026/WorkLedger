@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Search - WorkLedger{% endblock %}
+{% block content %}
+<h1>Search work history</h1>
+
+<form class="search-form" method="get" action="/search">
+    <input type="text" name="q" value="{{ q }}" placeholder="Keywords (Chinese or English)">
+    <select name="repo">
+        <option value="">All repos</option>
+        {% for r in repos %}
+        <option value="{{ r }}" {{ 'selected' if r == repo }}>{{ r }}</option>
+        {% endfor %}
+    </select>
+    <input type="number" name="pr_number" value="{{ pr_number or '' }}" placeholder="PR #">
+    <select name="event_type">
+        <option value="">All types</option>
+        {% for et in ['pr_created','review_finding','comment_analysis','fix','verification','reply_drafted','reply_published','manual'] %}
+        <option value="{{ et }}" {{ 'selected' if et == event_type }}>{{ et }}</option>
+        {% endfor %}
+    </select>
+    <input type="date" name="date_from" value="{{ date_from }}" title="From">
+    <input type="date" name="date_to" value="{{ date_to }}" title="To">
+    <button type="submit">Search</button>
+</form>
+
+<p class="result-count">{{ total }} result{{ 's' if total != 1 }}</p>
+
+{% if items %}
+<div class="card-list">
+{% for ev in items %}
+<div class="card">
+    <div class="card-header">
+        <span class="badge badge-type">{{ ev.event_type }}</span>
+        <a href="/event/{{ ev.id }}"><strong>{{ ev.summary or '(no summary)' }}</strong></a>
+    </div>
+    <div class="card-meta">
+        <span>{{ ev.occurred_at[:10] }}</span>
+        {% if ev.repo %}<a href="/pr?repo={{ ev.repo }}&pr_number={{ ev.pr_number }}">{{ ev.repo }}#{{ ev.pr_number }}</a>{% endif %}
+        {% if ev.jira_key %}<span>{{ ev.jira_key }}</span>{% endif %}
+        {% if ev.evidence_url %}<a href="{{ ev.evidence_url }}" target="_blank" rel="noopener">Evidence</a>{% endif %}
+    </div>
+</div>
+{% endfor %}
+</div>
+
+{% if pages > 1 %}
+<div class="pagination">
+    {% if page > 1 %}<a href="/search?q={{ q }}&repo={{ repo }}&page={{ page - 1 }}">&laquo; Prev</a>{% endif %}
+    <span>Page {{ page }} / {{ pages }}</span>
+    {% if page < pages %}<a href="/search?q={{ q }}&repo={{ repo }}&page={{ page + 1 }}">Next &raquo;</a>{% endif %}
+</div>
+{% endif %}
+
+{% elif q or repo or pr_number or event_type or date_from or date_to %}
+<p class="empty">No matching records.</p>
+{% else %}
+<p class="empty">Enter keywords or filters to search.</p>
+{% endif %}
+{% endblock %}

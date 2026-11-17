@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Retrospective - WorkLedger{% endblock %}
+{% block content %}
+<h1>Retrospective</h1>
+<div class="period-tabs">
+    <a href="/retrospective?period=month" class="{{ 'active' if period == 'month' }}">Month</a>
+    <a href="/retrospective?period=quarter" class="{{ 'active' if period == 'quarter' }}">Quarter</a>
+    <a href="/retrospective?period=year" class="{{ 'active' if period == 'year' }}">Year</a>
+</div>
+<p class="meta">{{ date_from }} &mdash; {{ date_to }}</p>
+
+<h2>Accomplishments ({{ accomplishments|length }})</h2>
+{% if accomplishments %}
+<div class="card-list">
+{% for a in accomplishments %}
+<div class="card {{ 'highlight' if a.is_highlight }}">
+    <div class="card-header">
+        {% if a.is_highlight %}<span class="badge badge-highlight">Highlight</span>{% endif %}
+        <strong>{{ a.title }}</strong>
+    </div>
+    {% if a.description %}<p>{{ a.description }}</p>{% endif %}
+    <div class="card-meta">
+        <span>{{ a.occurred_at[:10] }}</span>
+        {% if a.impact %}<span>Impact: {{ a.impact }}</span>{% endif %}
+        {% if a.impact_evidence_url %}<a href="{{ a.impact_evidence_url }}" target="_blank" rel="noopener">Evidence</a>{% endif %}
+        {% if a.tags %}<span>Tags: {{ a.tags }}</span>{% endif %}
+    </div>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<p class="empty">No accomplishments in this period.</p>
+{% endif %}
+
+<h2>Cases &amp; Lessons ({{ cases|length }})</h2>
+{% if cases %}
+<div class="card-list">
+{% for c in cases %}
+<div class="card">
+    <div class="card-header"><strong>{{ c.title }}</strong></div>
+    <p>{{ c.phenomenon }}</p>
+    <div class="card-meta">
+        <span>{{ c.occurred_at[:10] }}</span>
+        {% if c.root_cause %}
+        <span>Cause: {{ c.root_cause }} {% if not c.root_cause_confirmed %}<span class="badge badge-warn">unconfirmed</span>{% endif %}</span>
+        {% endif %}
+        {% if c.verification_done %}<span class="badge badge-ok">verified</span>{% else %}<span class="badge badge-warn">unverified</span>{% endif %}
+    </div>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<p class="empty">No cases in this period.</p>
+{% endif %}
+
+<h2>Manual entry</h2>
+<form id="add-accomplishment" onsubmit="return addAccomplishment(event)">
+    <input type="text" name="title" placeholder="Accomplishment title" required>
+    <input type="date" name="occurred_at" required>
+    <input type="text" name="impact" placeholder="Impact (optional)">
+    <input type="url" name="impact_evidence_url" placeholder="Evidence URL (optional)">
+    <label><input type="checkbox" name="is_highlight"> Highlight</label>
+    <button type="submit">Add accomplishment</button>
+</form>
+{% endblock %}

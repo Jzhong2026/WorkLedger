@@ -1,0 +1,65 @@
+:root {
+    --bg: #f8f9fa;
+    --card-bg: #fff;
+    --text: #212529;
+    --muted: #6c757d;
+    --border: #dee2e6;
+    --primary: #0d6efd;
+    --success: #198754;
+    --warning: #ffc107;
+    --danger: #dc3545;
+    --radius: 8px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+.nav { display: flex; align-items: center; gap: 2rem; padding: 0.75rem 1.5rem; background: var(--card-bg); border-bottom: 1px solid var(--border); }
+.nav-brand { font-weight: 700; font-size: 1.1rem; text-decoration: none; color: var(--primary); }
+.nav-links { display: flex; gap: 1rem; }
+.nav-links a { text-decoration: none; color: var(--muted); }
+.nav-links a:hover { color: var(--primary); }
+.container { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+h1 { margin-bottom: 1rem; font-size: 1.5rem; }
+h1 small { color: var(--muted); font-weight: 400; }
+h2 { margin: 1.5rem 0 0.75rem; font-size: 1.2rem; }
+.card-list { display: flex; flex-direction: column; gap: 0.75rem; }
+.card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; }
+.card.highlight { border-left: 4px solid var(--warning); }
+.card-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
+.card-meta { display: flex; flex-wrap: wrap; gap: 0.75rem; font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; }
+.card-meta a { color: var(--primary); }
+.card-actions { margin-top: 0.5rem; display: flex; gap: 0.5rem; }
+.badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+.badge-pending { background: #cfe2ff; color: #084298; }
+.badge-waiting { background: #fff3cd; color: #664d03; }
+.badge-done { background: #d1e7dd; color: #0f5132; }
+.badge-type { background: #e2e3e5; color: #41464b; }
+.badge-warn { background: #fff3cd; color: #664d03; }
+.badge-ok { background: #d1e7dd; color: #0f5132; }
+.badge-highlight { background: #fff3cd; color: #664d03; }
+.empty { color: var(--muted); padding: 2rem 0; }
+.search-form { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+.search-form input, .search-form select { padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 4px; }
+.search-form input[type="text"] { flex: 1; min-width: 200px; }
+.result-count { font-size: 0.85rem; color: var(--muted); margin-bottom: 0.75rem; }
+.pagination { display: flex; gap: 1rem; align-items: center; margin-top: 1rem; }
+.pagination a { color: var(--primary); text-decoration: none; }
+.period-tabs, .filter-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+.period-tabs a, .filter-tabs a { padding: 0.3rem 0.8rem; border-radius: 4px; text-decoration: none; color: var(--muted); border: 1px solid var(--border); }
+.period-tabs a.active, .filter-tabs a.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.timeline { position: relative; padding-left: 1.5rem; }
+.timeline::before { content: ''; position: absolute; left: 0.5rem; top: 0; bottom: 0; width: 2px; background: var(--border); }
+.timeline-item { position: relative; margin-bottom: 1rem; }
+.timeline-dot { position: absolute; left: -1.25rem; top: 1rem; width: 10px; height: 10px; border-radius: 50%; background: var(--primary); }
+.detail-grid dl { display: grid; grid-template-columns: 120px 1fr; gap: 0.4rem 1rem; }
+.detail-grid dt { font-weight: 600; color: var(--muted); }
+.detail-text { white-space: pre-wrap; background: var(--bg); padding: 1rem; border-radius: var(--radius); font-size: 0.9rem; }
+form label { display: block; margin-bottom: 0.5rem; }
+form input[type="text"], form input[type="url"], form input[type="date"], form input[type="number"], form textarea, form select {
+    width: 100%; padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 4px; margin-top: 0.2rem;
+}
+form button, .card-actions button { padding: 0.4rem 1rem; border: none; border-radius: 4px; background: var(--primary); color: #fff; cursor: pointer; font-size: 0.85rem; }
+form button:hover, .card-actions button:hover { opacity: 0.9; }
+button.danger { background: var(--danger); }
+.inline-form { display: flex; gap: 0.5rem; align-items: center; }
+.inline-form input[type="text"] { flex: 1; }
+.meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem; }

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ repo }}#{{ pr_number }} - WorkLedger{% endblock %}
+{% block content %}
+<h1>{{ repo }} <small>PR #{{ pr_number }}</small></h1>
+
+{% if timeline %}
+<div class="timeline">
+{% for ev in timeline %}
+<div class="timeline-item">
+    <div class="timeline-dot badge-type"></div>
+    <div class="timeline-content card">
+        <div class="card-header">
+            <span class="badge badge-type">{{ ev.event_type }}</span>
+            <a href="/event/{{ ev.id }}"><strong>{{ ev.summary or '(no summary)' }}</strong></a>
+        </div>
+        <div class="card-meta">
+            <span>{{ ev.occurred_at }}</span>
+            {% if ev.comment_id %}<span>Comment: {{ ev.comment_id }}</span>{% endif %}
+            {% if ev.evidence_url %}<a href="{{ ev.evidence_url }}" target="_blank" rel="noopener">Evidence</a>{% endif %}
+            {% if ev.reply_status %}<span class="badge">{{ ev.reply_status }}</span>{% endif %}
+        </div>
+        {% if ev.detail %}<p class="detail">{{ ev.detail[:200] }}</p>{% endif %}
+    </div>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<p class="empty">No events recorded for this PR.</p>
+{% endif %}
+{% endblock %}

@@ -22,8 +22,16 @@ def _conn():
 @router.get("/")
 def today_page(request: Request):
     today = date.today().isoformat()
-    items = todos.today_todos(_conn(), today)
-    return templates.TemplateResponse(request, "today.html", {"todos": items, "today": today})
+    conn = _conn()
+    items = todos.today_todos(conn, today)
+    all_todos, total = todos.list_todos(conn)
+    pending = sum(1 for t in all_todos if t["status"] == "pending")
+    waiting = sum(1 for t in all_todos if t["status"] == "waiting")
+    done = sum(1 for t in all_todos if t["status"] == "done")
+    return templates.TemplateResponse(request, "today.html", {
+        "todos": items, "today": today,
+        "stats": {"pending": pending, "waiting": waiting, "done": done},
+    })
 
 
 @router.get("/search")

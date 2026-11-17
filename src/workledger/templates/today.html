@@ -3,6 +3,13 @@
 {% block content %}
 <h1>Today <small>{{ today }}</small></h1>
 
+<div class="stat-row">
+    <div class="stat"><div class="stat-num">{{ stats.pending }}</div><div class="stat-label">Pending</div></div>
+    <div class="stat gold"><div class="stat-num">{{ stats.waiting }}</div><div class="stat-label">Waiting</div></div>
+    <div class="stat rust"><div class="stat-num">{{ stats.done }}</div><div class="stat-label">Done</div></div>
+</div>
+
+<h2>Follow-ups</h2>
 {% if todos %}
 <div class="card-list">
 {% for t in todos %}
@@ -13,9 +20,9 @@
     </div>
     {% if t.description %}<p>{{ t.description }}</p>{% endif %}
     <div class="card-meta">
-        {% if t.due_date %}<span class="due">Due: {{ t.due_date }}</span>{% endif %}
-        {% if t.next_followup %}<span class="followup">Follow-up: {{ t.next_followup }}</span>{% endif %}
-        {% if t.wait_target %}<span class="waiting">Waiting: {{ t.wait_target }}</span>{% endif %}
+        {% if t.due_date %}<span class="due">Due {{ t.due_date }}</span>{% endif %}
+        {% if t.next_followup %}<span class="followup">Follow-up {{ t.next_followup }}</span>{% endif %}
+        {% if t.wait_target %}<span class="waiting">Waiting on {{ t.wait_target }}</span>{% endif %}
         {% if t.event_id %}<a href="/event/{{ t.event_id }}">Linked event</a>{% endif %}
     </div>
     <div class="card-actions">
@@ -29,7 +36,10 @@
 {% endfor %}
 </div>
 {% else %}
-<p class="empty">No follow-ups for today. <a href="/todos">View all to-dos</a></p>
+<div class="empty">
+    <img class="empty-illustration" src="/static/img/empty-ledger.png" alt="Open ledger">
+    Nothing needs follow-up today. Enjoy the clear page.
+</div>
 {% endif %}
 
 <h2>Quick add</h2>

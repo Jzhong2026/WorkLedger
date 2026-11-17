@@ -111,3 +111,12 @@ def settings_page(request: Request):
     return templates.TemplateResponse(request, "settings.html", {
         "projects": projects, "sprints": sprints, "project_map": project_map,
     })
+
+
+@router.get("/inbox")
+def inbox_page(request: Request):
+    from ..services import inbox
+    conn = _conn()
+    notes = inbox.list_notes(conn)
+    drafts = inbox.list_drafts(conn, status="pending")
+    return templates.TemplateResponse(request, "inbox.html", {"notes": notes, "drafts": drafts})

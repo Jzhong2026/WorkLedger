@@ -9,6 +9,12 @@
 </div>
 <p class="meta">{{ date_from }} &mdash; {{ date_to }}</p>
 
+<div class="card-actions" style="margin-bottom:1rem">
+    <a href="/api/export?period={{ period }}"><button>Export Markdown</button></a>
+    <button onclick="generateNarrative('{{ period }}')">Synthesize narrative</button>
+</div>
+<div id="narrative-box"></div>
+
 <h2>Accomplishments ({{ accomplishments|length }})</h2>
 {% if accomplishments %}
 <div class="card-list">

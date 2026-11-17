@@ -334,3 +334,107 @@ def delete_sprint(sprint_id: int):
     from ..services import master_data
     if not master_data.delete_sprint(_conn(), sprint_id):
         raise HTTPException(404, f"Sprint {sprint_id} not found")
+
+
+# --- Inbox & drafts ---
+
+@router.post("/inbox", status_code=201)
+def capture_note(data: dict):
+    from ..services import inbox
+    return inbox.create_note(_conn(), data["raw_text"])
+
+
+@router.get("/inbox")
+def list_inbox(status: str | None = None):
+    from ..services import inbox
+    return inbox.list_notes(_conn(), status=status)
+
+
+@router.post("/inbox/{note_id}/structure")
+def structure_note(note_id: int, model: str | None = None):
+    from ..services import inbox
+    from ..agent import structure_note as agent_structure
+    note = inbox.get_note(_conn(), note_id)
+    if not note:
+        raise HTTPException(404, f"Note {note_id} not found")
+    result = agent_structure(note["raw_text"], model=model)
+    if not result.get("ok"):
+        raise HTTPException(503, result.get("error", "Agent unavailable"))
+    drafts = inbox.save_drafts(_conn(), note_id, result["events"])
+    return {"note_id": note_id, "drafts": drafts}
+
+
+@router.get("/drafts")
+def list_drafts(note_id: int | None = None, status: str | None = "pending"):
+    from ..services import inbox
+    return inbox.list_drafts(_conn(), note_id=note_id, status=status)
+
+
+@router.post("/drafts/{draft_id}/confirm")
+def confirm_draft(draft_id: int):
+    from ..services import inbox
+    return inbox.confirm_draft(_conn(), draft_id)
+
+
+@router.post("/drafts/{draft_id}/discard")
+def discard_draft(draft_id: int):
+    from ..services import inbox
+    if not inbox.discard_draft(_conn(), draft_id):
+        raise HTTPException(404, f"Pending draft {draft_id} not found")
+    return {"discarded": draft_id}
+
+
+@router.post("/inbox/{note_id}/discard")
+def discard_note(note_id: int):
+    from ..services import inbox
+    if not inbox.discard_note(_conn(), note_id):
+        raise HTTPException(404, f"Note {note_id} not found")
+    return {"discarded": note_id}
+
+
+# --- Full-text search ---
+
+@router.get("/search/fts")
+def search_fts(q: str, repo: str | None = None, event_type: str | None = None, page: int = 1, page_size: int = 20):
+    items, total = events.search_fts(_conn(), q, repo=repo, event_type=event_type, page=page, page_size=page_size)
+    pages = (total + page_size - 1) // page_size if total else 0
+    return {"items": items, "total": total, "page": page, "pages": pages}
+
+
+@router.post("/search/semantic")
+def search_semantic(data: dict):
+    from ..agent import expand_query
+    expansion = expand_query(data["question"], model=data.get("model"))
+    if not expansion.get("ok"):
+        raise HTTPException(503, expansion.get("error", "Agent unavailable"))
+    keywords = [k.strip() for k in expansion["keywords"].split(",") if k.strip()][:5]
+    raw_match = " OR ".join('"' + k.replace('"', '""') + '"' for k in keywords) if keywords else None
+    items, total = events.search_fts(
+        _conn(), expansion["keywords"], repo=expansion.get("repo"),
+        event_type=expansion.get("event_type"), raw_match=raw_match,
+    )
+    return {"expansion": expansion, "items": items, "total": total}
+
+
+# --- Export ---
+
+@router.get("/export")
+def export_markdown(period: str = "year"):
+    from fastapi.responses import PlainTextResponse
+    from ..services import export
+    md = export.export_markdown(_conn(), period)
+    return PlainTextResponse(md, media_type="text/markdown", headers={
+        "Content-Disposition": f'attachment; filename="workledger-{period}.md"'
+    })
+
+
+@router.post("/export/narrative")
+def export_narrative(data: dict):
+    from ..services import export
+    from ..agent import synthesize_narrative
+    period = data.get("period", "year")
+    md = export.export_markdown(_conn(), period)
+    result = synthesize_narrative(md, period, model=data.get("model"))
+    if not result.get("ok"):
+        raise HTTPException(503, result.get("error", "Agent unavailable"))
+    return {"period": period, "narrative": result["narrative"]}

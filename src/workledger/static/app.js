@@ -99,3 +99,15 @@ async function addAccomplishment(e) {
     location.reload();
     return false;
 }
+
+async function generateNarrative(period) {
+    const box = document.getElementById('narrative-box');
+    box.innerHTML = '<div class="card"><p>Synthesizing narrative…</p></div>';
+    try {
+        const res = await api('POST', '/export/narrative', { period });
+        box.innerHTML = '<div class="card highlight"><div class="card-header"><strong>Narrative</strong></div><p style="white-space:pre-wrap">' +
+            res.narrative.replace(/</g, '&lt;') + '</p></div>';
+    } catch (err) {
+        box.innerHTML = '';
+    }
+}

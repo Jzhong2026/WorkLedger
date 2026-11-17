@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Inbox - WorkLedger{% endblock %}
+{% block content %}
+<h1>Inbox <small>capture first, organize later</small></h1>
+
+<form id="capture" class="inline-form" onsubmit="return captureNote(event)">
+    <input type="text" name="raw_text" placeholder="Dump a work note… e.g. fixed null check in PR 42, reviewer agreed" required>
+    <button type="submit">Capture</button>
+</form>
+
+<h2>Pending drafts</h2>
+{% if drafts %}
+<div class="card-list">
+{% for d in drafts %}
+<div class="card highlight">
+    <div class="card-header">
+        <span class="badge badge-{{ d.draft.event_type }}">{{ d.draft.event_type }}</span>
+        <strong>{{ d.draft.summary }}</strong>
+    </div>
+    <div class="card-meta">
+        {% if d.draft.repo %}<span>{{ d.draft.repo }}{% if d.draft.pr_number %}#{{ d.draft.pr_number }}{% endif %}</span>{% endif %}
+        {% if d.draft.root_cause %}<span>Cause: {{ d.draft.root_cause }}</span>{% endif %}
+        <span>from note #{{ d.note_id }}</span>
+    </div>
+    <div class="card-actions">
+        <button onclick="confirmDraft({{ d.id }})">Confirm</button>
+        <button class="danger" onclick="discardDraft({{ d.id }})">Discard</button>
+    </div>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<p class="empty">No drafts awaiting review.</p>
+{% endif %}
+
+<h2>Notes</h2>
+{% if notes %}
+<div class="card-list">
+{% for n in notes %}
+<div class="card">
+    <div class="card-header">
+        <span class="badge badge-{{ 'done' if n.status == 'committed' else ('waiting' if n.status == 'structured' else 'pending') }}">{{ n.status }}</span>
+        <strong>{{ n.raw_text }}</strong>
+    </div>
+    <div class="card-meta"><span>{{ n.created_at }}</span></div>
+    {% if n.status == 'raw' %}
+    <div class="card-actions">
+        <button onclick="structureNote({{ n.id }})">Structure with agent</button>
+        <button class="danger" onclick="discardNote({{ n.id }})">Discard</button>
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+</div>
+{% else %}
+<div class="empty">
+    <img class="empty-illustration" src="/static/img/empty-ledger.png" alt="Open ledger">
+    Inbox is empty. Capture a note above to get started.
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function captureNote(e) {
+    e.preventDefault();
+    await api('POST', '/inbox', { raw_text: e.target.raw_text.value });
+    location.reload(); return false;
+}
+async function structureNote(id) {
+    const btn = event.target; btn.disabled = true; btn.textContent = 'Structuring…';
+    try { await api('POST', '/inbox/' + id + '/structure'); location.reload(); }
+    catch (err) { btn.disabled = false; btn.textContent = 'Structure with agent'; }
+}
+async function confirmDraft(id) { await api('POST', '/drafts/' + id + '/confirm'); location.reload(); }
+async function discardDraft(id) { await api('POST', '/drafts/' + id + '/discard'); location.reload(); }
+async function discardNote(id) { await api('POST', '/inbox/' + id + '/discard'); location.reload(); }
+</script>
+{% endblock %}

@@ -26,3 +26,7 @@ data/
 # OS
 Thumbs.db
 .DS_Store
+
+# Generated image scratch
+vibe_images/
+tmp/

@@ -382,6 +382,119 @@ def delete_sprint(sprint_id: int) -> str:
         return _err(e)
 
 
+# --- Quick Inbox ---
+
+@mcp.tool()
+def capture_note(raw_text: str) -> str:
+    """Capture a quick natural-language work note into the inbox. Works offline; structure it later."""
+    try:
+        from .services import inbox
+        return json.dumps(inbox.create_note(_conn(), raw_text), ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def list_inbox(status: str | None = None) -> str:
+    """List inbox notes. status: raw|structured|committed|discarded (omit for all)."""
+    try:
+        from .services import inbox
+        return json.dumps(inbox.list_notes(_conn(), status=status), ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def structure_note(note_id: int) -> str:
+    """Use the built-in agent (LLM) to parse an inbox note into draft events. Requires agent key. Drafts need human confirm."""
+    try:
+        from .services import inbox
+        from .agent import structure_note as agent_structure
+        note = inbox.get_note(_conn(), note_id)
+        if not note:
+            return json.dumps({"error": f"Note {note_id} not found"})
+        result = agent_structure(note["raw_text"])
+        if not result.get("ok"):
+            return json.dumps(result)
+        drafts = inbox.save_drafts(_conn(), note_id, result["events"])
+        return json.dumps({"note_id": note_id, "drafts": drafts}, ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def list_drafts(note_id: int | None = None) -> str:
+    """List pending event drafts awaiting confirmation."""
+    try:
+        from .services import inbox
+        return json.dumps(inbox.list_drafts(_conn(), note_id=note_id), ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def confirm_draft(draft_id: int) -> str:
+    """Confirm a draft event, committing it to work_events. Returns the created event."""
+    try:
+        from .services import inbox
+        return json.dumps(inbox.confirm_draft(_conn(), draft_id), ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
+# --- Full-text & semantic search ---
+
+@mcp.tool()
+def search_fulltext(q: str, repo: str | None = None, event_type: str | None = None, page: int = 1) -> str:
+    """Full-text search (FTS5, Chinese + English) over work events. Faster and more accurate than keyword LIKE."""
+    try:
+        items, total = events.search_fts(_conn(), q, repo=repo, event_type=event_type, page=page)
+        return json.dumps({"items": items, "total": total, "page": page}, ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def search_semantic(question: str) -> str:
+    """Answer a vague question about past work. Agent expands it into search keywords, then retrieves matching events. Requires agent key."""
+    try:
+        from .agent import expand_query
+        expansion = expand_query(question)
+        if not expansion.get("ok"):
+            return json.dumps(expansion)
+        keywords = [k.strip() for k in expansion["keywords"].split(",") if k.strip()][:5]
+        raw_match = " OR ".join('"' + k.replace('"', '""') + '"' for k in keywords) if keywords else None
+        items, total = events.search_fts(_conn(), expansion["keywords"], repo=expansion.get("repo"), event_type=expansion.get("event_type"), raw_match=raw_match)
+        return json.dumps({"expansion": expansion, "items": items, "total": total}, ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
+# --- Export ---
+
+@mcp.tool()
+def export_retrospective(period: str = "year") -> str:
+    """Export a structured Markdown retrospective (accomplishments, cases, events + evidence). period: month|quarter|year|all."""
+    try:
+        from .services import export
+        return export.export_markdown(_conn(), period)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def export_narrative(period: str = "year") -> str:
+    """Agent-synthesized prose retrospective grounded in recorded work. Requires agent key. States coverage gaps, no fabrication."""
+    try:
+        from .services import export
+        from .agent import synthesize_narrative
+        md = export.export_markdown(_conn(), period)
+        result = synthesize_narrative(md, period)
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
 def main():
     mcp.run()
 

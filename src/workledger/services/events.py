@@ -135,9 +135,13 @@ def search_events(
     params: list = []
 
     if q:
-        conditions.append("(summary LIKE ? OR detail LIKE ? OR root_cause LIKE ?)")
-        like = f"%{q}%"
-        params.extend([like, like, like])
+        if len(q.strip()) >= 3:
+            conditions.append("id IN (SELECT rowid FROM work_events_fts WHERE work_events_fts MATCH ?)")
+            params.append('"' + q.replace('"', '""') + '"')
+        else:
+            conditions.append("(summary LIKE ? OR detail LIKE ? OR root_cause LIKE ?)")
+            like = f"%{q}%"
+            params.extend([like, like, like])
     if repo:
         conditions.append("repo = ?")
         params.append(repo)
@@ -181,3 +185,43 @@ def list_repos(conn: sqlite3.Connection) -> list[str]:
         "SELECT DISTINCT repo FROM work_events WHERE repo IS NOT NULL ORDER BY repo"
     ).fetchall()
     return [r["repo"] for r in rows]
+
+
+def search_fts(
+    conn: sqlite3.Connection,
+    query: str,
+    *,
+    repo: str | None = None,
+    event_type: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    raw_match: str | None = None,
+) -> tuple[list[dict], int]:
+    """Full-text search via FTS5 trigram. Falls back to LIKE for queries under 3 chars.
+    raw_match overrides query with a pre-built FTS5 expression (e.g. OR of keywords)."""
+    conditions = []
+    params: list = []
+    if raw_match:
+        conditions.append("id IN (SELECT rowid FROM work_events_fts WHERE work_events_fts MATCH ?)")
+        params.append(raw_match)
+    elif len(query.strip()) >= 3:
+        conditions.append("id IN (SELECT rowid FROM work_events_fts WHERE work_events_fts MATCH ?)")
+        params.append('"' + query.replace('"', '""') + '"')
+    else:
+        conditions.append("(summary LIKE ? OR detail LIKE ? OR root_cause LIKE ?)")
+        like = f"%{query}%"
+        params.extend([like, like, like])
+    if repo:
+        conditions.append("repo = ?")
+        params.append(repo)
+    if event_type:
+        conditions.append("event_type = ?")
+        params.append(event_type)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    total = conn.execute(f"SELECT COUNT(*) AS c FROM work_events {where}", params).fetchone()["c"]
+    offset = (page - 1) * page_size
+    rows = conn.execute(
+        f"SELECT * FROM work_events {where} ORDER BY occurred_at DESC, id DESC LIMIT ? OFFSET ?",
+        params + [page_size, offset],
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows], total

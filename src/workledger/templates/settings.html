@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Settings - WorkLedger{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+
+<h2>Projects</h2>
+<div class="card-list" id="project-list">
+{% for p in projects %}
+<div class="card" style="border-left: 4px solid {{ p.color }}">
+    <div class="card-header">
+        <span class="badge" style="background: {{ p.color }}20; color: {{ p.color }}">{{ p.key }}</span>
+        <strong>{{ p.name }}</strong>
+        {% if p.is_archived %}<span class="badge badge-warn">archived</span>{% endif %}
+    </div>
+    <div class="card-meta">
+        {% if p.repo %}<span>{{ p.repo }}</span>{% endif %}
+        {% if p.description %}<span>{{ p.description }}</span>{% endif %}
+    </div>
+    <div class="card-actions">
+        <button onclick="archiveProject({{ p.id }}, {{ 'false' if p.is_archived else 'true' }})">{{ 'Unarchive' if p.is_archived else 'Archive' }}</button>
+        <button class="danger" onclick="deleteProject({{ p.id }})">Delete</button>
+    </div>
+</div>
+{% endfor %}
+{% if not projects %}<p class="empty">No projects yet.</p>{% endif %}
+</div>
+
+<form id="add-project" class="inline-form" style="margin-top:1rem" onsubmit="return addProject(event)">
+    <input type="text" name="name" placeholder="Project name" required>
+    <input type="text" name="key" placeholder="KEY" required style="width:80px;flex:none">
+    <input type="text" name="repo" placeholder="repo (optional)">
+    <input type="color" name="color" value="#2563eb" style="width:40px;flex:none;padding:2px">
+    <button type="submit">Add</button>
+</form>
+
+<h2>Sprints</h2>
+<div class="card-list" id="sprint-list">
+{% for s in sprints %}
+<div class="card">
+    <div class="card-header">
+        <span class="badge badge-{{ s.status }}">{{ s.status }}</span>
+        <strong>{{ s.name }}</strong>
+        <span class="badge badge-type">{{ project_map.get(s.project_id, '?') }}</span>
+    </div>
+    <div class="card-meta">
+        <span>{{ s.start_date }} → {{ s.end_date }}</span>
+        {% if s.goal %}<span>Goal: {{ s.goal }}</span>{% endif %}
+    </div>
+    <div class="card-actions">
+        {% if s.status == 'planned' %}<button onclick="activateSprint({{ s.id }})">Activate</button>{% endif %}
+        {% if s.status == 'active' %}<button onclick="completeSprint({{ s.id }})">Complete</button>{% endif %}
+        <button class="danger" onclick="deleteSprint({{ s.id }})">Delete</button>
+    </div>
+</div>
+{% endfor %}
+{% if not sprints %}<p class="empty">No sprints yet.</p>{% endif %}
+</div>
+
+<form id="add-sprint" style="margin-top:1rem; display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:0.5rem;" onsubmit="return addSprint(event)">
+    <select name="project_id" required>
+        <option value="">Project</option>
+        {% for p in projects %}{% if not p.is_archived %}<option value="{{ p.id }}">{{ p.name }}</option>{% endif %}{% endfor %}
+    </select>
+    <input type="text" name="name" placeholder="Sprint name" required>
+    <input type="date" name="start_date" required>
+    <input type="date" name="end_date" required>
+    <input type="text" name="goal" placeholder="Goal (optional)" style="grid-column:1/-1">
+    <button type="submit" style="justify-self:start">Add Sprint</button>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function addProject(e) {
+    e.preventDefault();
+    const f = e.target;
+    await api('POST', '/projects', { name: f.name.value, key: f.key.value, repo: f.repo.value || null, color: f.color.value });
+    location.reload(); return false;
+}
+async function archiveProject(id, archive) {
+    await api('PATCH', '/projects/' + id, { is_archived: archive });
+    location.reload();
+}
+async function deleteProject(id) {
+    if (!confirm('Delete project? Linked events will be unlinked.')) return;
+    await api('DELETE', '/projects/' + id);
+    location.reload();
+}
+async function addSprint(e) {
+    e.preventDefault();
+    const f = e.target;
+    await api('POST', '/sprints', { project_id: parseInt(f.project_id.value), name: f.name.value, start_date: f.start_date.value, end_date: f.end_date.value, goal: f.goal.value || null });
+    location.reload(); return false;
+}
+async function activateSprint(id) { await api('PATCH', '/sprints/' + id, { status: 'active' }); location.reload(); }
+async function completeSprint(id) { await api('PATCH', '/sprints/' + id, { status: 'completed' }); location.reload(); }
+async function deleteSprint(id) {
+    if (!confirm('Delete sprint?')) return;
+    await api('DELETE', '/sprints/' + id);
+    location.reload();
+}
+</script>
+{% endblock %}

@@ -91,3 +91,15 @@ def todos_page(request: Request, status: str | None = None):
     return templates.TemplateResponse(request, "todos.html", {
         "todos": items, "total": total, "status_filter": status or "",
     })
+
+
+@router.get("/settings")
+def settings_page(request: Request):
+    from ..services import master_data
+    conn = _conn()
+    projects = master_data.list_projects(conn, include_archived=True)
+    sprints = master_data.list_sprints(conn)
+    project_map = {p["id"]: p["key"] for p in projects}
+    return templates.TemplateResponse(request, "settings.html", {
+        "projects": projects, "sprints": sprints, "project_map": project_map,
+    })

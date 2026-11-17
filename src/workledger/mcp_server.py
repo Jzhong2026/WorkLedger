@@ -288,6 +288,100 @@ def retrospective(period: str = "year") -> str:
         return _err(e)
 
 
+# --- Master Data: Projects & Sprints ---
+
+@mcp.tool()
+def create_project(name: str, key: str, repo: str | None = None, description: str | None = None, color: str = "#2563eb") -> str:
+    """Create a project for organizing work events and todos. key: short uppercase code (unique)."""
+    try:
+        from .services import master_data
+        result = master_data.create_project(_conn(), name=name, key=key, repo=repo, description=description, color=color)
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def list_projects(include_archived: bool = False) -> str:
+    """List all projects. Optionally include archived ones."""
+    try:
+        from .services import master_data
+        result = master_data.list_projects(_conn(), include_archived=include_archived)
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def update_project(project_id: int, name: str | None = None, key: str | None = None, repo: str | None = None, description: str | None = None, color: str | None = None, is_archived: bool | None = None) -> str:
+    """Update a project's fields. Set is_archived=true to archive."""
+    try:
+        from .services import master_data
+        result = master_data.update_project(_conn(), project_id, name=name, key=key, repo=repo, description=description, color=color, is_archived=is_archived)
+        if not result:
+            return json.dumps({"error": f"Project {project_id} not found"})
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def delete_project(project_id: int) -> str:
+    """Delete a project. Events/todos linked to it will have project_id set to null."""
+    try:
+        from .services import master_data
+        ok = master_data.delete_project(_conn(), project_id)
+        return json.dumps({"deleted": ok, "project_id": project_id})
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def create_sprint(project_id: int, name: str, start_date: str, end_date: str, goal: str | None = None, status: str = "planned") -> str:
+    """Create a sprint under a project. dates: YYYY-MM-DD. status: planned|active|completed. Only one active sprint per project."""
+    try:
+        from .services import master_data
+        result = master_data.create_sprint(_conn(), project_id=project_id, name=name, start_date=start_date, end_date=end_date, goal=goal, status=status)
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def list_sprints(project_id: int | None = None, status: str | None = None) -> str:
+    """List sprints, optionally filtered by project and/or status (planned|active|completed)."""
+    try:
+        from .services import master_data
+        result = master_data.list_sprints(_conn(), project_id=project_id, status=status)
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def update_sprint(sprint_id: int, name: str | None = None, goal: str | None = None, start_date: str | None = None, end_date: str | None = None, status: str | None = None) -> str:
+    """Update a sprint. Setting status=active auto-deactivates other active sprints in the same project."""
+    try:
+        from .services import master_data
+        result = master_data.update_sprint(_conn(), sprint_id, name=name, goal=goal, start_date=start_date, end_date=end_date, status=status)
+        if not result:
+            return json.dumps({"error": f"Sprint {sprint_id} not found"})
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def delete_sprint(sprint_id: int) -> str:
+    """Delete a sprint. Events/todos linked to it will have sprint_id set to null."""
+    try:
+        from .services import master_data
+        ok = master_data.delete_sprint(_conn(), sprint_id)
+        return json.dumps({"deleted": ok, "sprint_id": sprint_id})
+    except Exception as e:
+        return _err(e)
+
+
 def main():
     mcp.run()
 

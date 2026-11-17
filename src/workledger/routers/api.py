@@ -256,3 +256,81 @@ def agent_status():
 def agent_test_connection(model: str | None = None):
     from ..agent import test_connection
     return test_connection(model)
+
+
+# --- Projects ---
+
+@router.get("/projects")
+def list_projects(include_archived: bool = False):
+    from ..services import master_data
+    return master_data.list_projects(_conn(), include_archived=include_archived)
+
+
+@router.post("/projects", status_code=201)
+def create_project(data: dict):
+    from ..services import master_data
+    return master_data.create_project(_conn(), **data)
+
+
+@router.get("/projects/{project_id}")
+def get_project(project_id: int):
+    from ..services import master_data
+    result = master_data.get_project(_conn(), project_id)
+    if not result:
+        raise HTTPException(404, f"Project {project_id} not found")
+    return result
+
+
+@router.patch("/projects/{project_id}")
+def update_project(project_id: int, data: dict):
+    from ..services import master_data
+    result = master_data.update_project(_conn(), project_id, **data)
+    if not result:
+        raise HTTPException(404, f"Project {project_id} not found")
+    return result
+
+
+@router.delete("/projects/{project_id}", status_code=204)
+def delete_project(project_id: int):
+    from ..services import master_data
+    if not master_data.delete_project(_conn(), project_id):
+        raise HTTPException(404, f"Project {project_id} not found")
+
+
+# --- Sprints ---
+
+@router.get("/sprints")
+def list_sprints(project_id: int | None = None, status: str | None = None):
+    from ..services import master_data
+    return master_data.list_sprints(_conn(), project_id=project_id, status=status)
+
+
+@router.post("/sprints", status_code=201)
+def create_sprint(data: dict):
+    from ..services import master_data
+    return master_data.create_sprint(_conn(), **data)
+
+
+@router.get("/sprints/{sprint_id}")
+def get_sprint(sprint_id: int):
+    from ..services import master_data
+    result = master_data.get_sprint(_conn(), sprint_id)
+    if not result:
+        raise HTTPException(404, f"Sprint {sprint_id} not found")
+    return result
+
+
+@router.patch("/sprints/{sprint_id}")
+def update_sprint(sprint_id: int, data: dict):
+    from ..services import master_data
+    result = master_data.update_sprint(_conn(), sprint_id, **data)
+    if not result:
+        raise HTTPException(404, f"Sprint {sprint_id} not found")
+    return result
+
+
+@router.delete("/sprints/{sprint_id}", status_code=204)
+def delete_sprint(sprint_id: int):
+    from ..services import master_data
+    if not master_data.delete_sprint(_conn(), sprint_id):
+        raise HTTPException(404, f"Sprint {sprint_id} not found")

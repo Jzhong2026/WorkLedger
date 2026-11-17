@@ -52,6 +52,9 @@ h2 { margin: 1.5rem 0 0.75rem; font-size: 1.15rem; font-weight: 600; }
 .badge-pending { background: var(--primary-light); color: var(--primary); }
 .badge-waiting { background: var(--warning-light); color: var(--warning); }
 .badge-done { background: var(--success-light); color: var(--success); }
+.badge-planned { background: #f3f4f6; color: #6b7280; }
+.badge-active { background: var(--success-light); color: var(--success); }
+.badge-completed { background: var(--primary-light); color: var(--primary); }
 .badge-warn { background: var(--warning-light); color: var(--warning); }
 .badge-ok { background: var(--success-light); color: var(--success); }
 .badge-highlight { background: var(--warning-light); color: var(--warning); }

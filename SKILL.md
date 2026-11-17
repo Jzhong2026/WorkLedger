@@ -49,20 +49,60 @@ Or if installed as a package:
 
 ## Tools
 
+29 tools total. Tools marked 🔑 require the built-in agent (CodeBuddy API key); all others work offline.
+
+### Work events
 | Tool | Purpose |
 |------|---------|
 | `record_event` | Record a work event (review, fix, verification, reply, etc.) |
 | `update_event` | Update an existing event (add root cause, verification, evidence) |
-| `search_events` | Search by keyword (Chinese/English), repo, PR, Jira, type, date |
+| `search_events` | Filter by keyword (Chinese/English), repo, PR, Jira, type, date |
 | `get_event_detail` | Full detail of one event with evidence links |
 | `get_pr_timeline` | All events for a PR in chronological order |
+
+### To-dos & follow-ups
+| Tool | Purpose |
+|------|---------|
 | `create_todo` | Create a follow-up, optionally linked to an event |
 | `update_todo` | Change status (pending/waiting/done), dates, wait target |
 | `list_todos` | List to-dos by status |
 | `today_followups` | To-dos needing attention today |
+
+### Retrospectives
+| Tool | Purpose |
+|------|---------|
 | `record_accomplishment` | Record an accomplishment for retrospectives |
 | `record_case` | Record a problem/lesson with root cause and verification |
 | `retrospective` | Get accomplishments, cases, events for month/quarter/year |
+| `export_retrospective` | Export structured Markdown (accomplishments/cases/events + evidence) |
+| `export_narrative` 🔑 | Agent-synthesized prose retrospective, grounded in records, states coverage gaps |
+
+### Quick inbox (capture first, organize later)
+| Tool | Purpose |
+|------|---------|
+| `capture_note` | Capture a raw natural-language work note (offline) |
+| `list_inbox` | List notes by status (raw/structured/committed/discarded) |
+| `structure_note` 🔑 | LLM parses a note into draft events (no regex intent matching) |
+| `list_drafts` | List pending drafts awaiting confirmation |
+| `confirm_draft` | Confirm a draft, committing it to work_events |
+
+### Search
+| Tool | Purpose |
+|------|---------|
+| `search_fulltext` | FTS5 full-text search (Chinese + English), faster than LIKE |
+| `search_semantic` 🔑 | Agent expands a vague question into keywords, then retrieves |
+
+### Master data
+| Tool | Purpose |
+|------|---------|
+| `create_project` / `list_projects` / `update_project` / `delete_project` | Manage projects (name/key/repo/color/archive) |
+| `create_sprint` / `list_sprints` / `update_sprint` / `delete_sprint` | Manage sprints (one active per project) |
+
+### Inbox workflow
+
+`capture_note` → `structure_note` (LLM drafts) → human reviews → `confirm_draft` (commits).
+Drafts are never auto-committed; confirmation protects evidence integrity. Without an agent key,
+notes stay raw and can be converted manually via `record_event`.
 
 ## Source identity and deduplication
 

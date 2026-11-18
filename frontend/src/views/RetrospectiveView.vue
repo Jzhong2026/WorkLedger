@@ -93,12 +93,15 @@ async function addAcc() {
   </template>
 
   <h2>Manual entry</h2>
-  <form id="add-accomplishment" @submit.prevent="addAcc">
-    <input v-model="form.title" type="text" placeholder="Accomplishment title" required />
-    <input v-model="form.occurred_at" type="date" required />
-    <input v-model="form.impact" type="text" placeholder="Impact (optional)" />
-    <input v-model="form.impact_evidence_url" type="url" placeholder="Evidence URL (optional)" />
-    <label><input v-model="form.is_highlight" type="checkbox" /> Highlight</label>
-    <button type="submit">Add accomplishment</button>
+  <form class="form-card" @submit.prevent="addAcc">
+    <div class="form-card-title">New accomplishment</div>
+    <div class="form-grid-2">
+      <label class="field form-span"><span class="field-label">Title</span><input v-model="form.title" type="text" placeholder="What did you achieve?" required /></label>
+      <label class="field"><span class="field-label">Date</span><input v-model="form.occurred_at" type="date" required /></label>
+      <label class="field"><span class="field-label">Impact</span><input v-model="form.impact" type="text" placeholder="Outcome / impact (optional)" /></label>
+      <label class="field form-span"><span class="field-label">Evidence URL</span><input v-model="form.impact_evidence_url" type="url" placeholder="Link to proof (optional)" /></label>
+      <label class="field checkbox-field form-span"><input v-model="form.is_highlight" type="checkbox" /> Mark as highlight</label>
+    </div>
+    <div class="form-actions"><button type="submit">Add accomplishment</button></div>
   </form>
 </template>

@@ -51,13 +51,15 @@ async function onRemove(id: number) { if (confirm('Delete this to-do?')) { await
   <EmptyState v-else illustration message="No to-dos with this status. Add one below." />
 
   <h2>Add to-do</h2>
-  <form id="add-todo" @submit.prevent="add">
-    <input v-model="form.title" type="text" placeholder="Title" required />
-    <textarea v-model="form.description" placeholder="Description (optional)" rows="2"></textarea>
-    <select v-model="form.status"><option value="pending">Pending</option><option value="waiting">Waiting</option></select>
-    <input v-model="form.wait_target" type="text" placeholder="Waiting for (optional)" />
-    <input v-model="form.due_date" type="date" title="Due date" />
-    <input v-model="form.next_followup" type="date" title="Next follow-up" />
-    <button type="submit">Add</button>
+  <form class="form-card" @submit.prevent="add">
+    <div class="form-grid-2">
+      <label class="field form-span"><span class="field-label">Title</span><input v-model="form.title" type="text" placeholder="What needs doing?" required /></label>
+      <label class="field form-span"><span class="field-label">Description</span><textarea v-model="form.description" placeholder="Details (optional)" rows="2"></textarea></label>
+      <label class="field"><span class="field-label">Status</span><select v-model="form.status"><option value="pending">Pending</option><option value="waiting">Waiting</option></select></label>
+      <label class="field"><span class="field-label">Waiting for</span><input v-model="form.wait_target" type="text" placeholder="Person / thing (optional)" /></label>
+      <label class="field"><span class="field-label">Due date</span><input v-model="form.due_date" type="date" /></label>
+      <label class="field"><span class="field-label">Next follow-up</span><input v-model="form.next_followup" type="date" /></label>
+    </div>
+    <div class="form-actions"><button type="submit">Add to-do</button></div>
   </form>
 </template>

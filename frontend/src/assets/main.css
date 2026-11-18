@@ -222,3 +222,31 @@ textarea { resize: vertical; line-height: 1.6; }
 .toast.error { background: var(--danger); }
 @keyframes toastIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 .loading { color: var(--text-3); padding: 24px; text-align: center; font-size: .9rem; }
+
+/* ============ Form fields (labeled, professional) ============ */
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > .field-label { font-size: .78rem; font-weight: 600; color: var(--text-2); letter-spacing: .01em; }
+.field input, .field select, .field textarea { width: 100%; }
+.form-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 20px; box-shadow: var(--sh-sm); }
+.form-card-title { font-size: .82rem; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 16px; }
+.form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-grid-3 { display: grid; grid-template-columns: 2fr 1fr 2fr; gap: 16px; }
+.form-span { grid-column: 1 / -1; }
+.form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+input[type="color"] { -webkit-appearance: none; appearance: none; width: 42px; height: 38px; padding: 3px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); cursor: pointer; }
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 5px; }
+.color-field { display: flex; align-items: flex-end; gap: 8px; }
+
+/* Project / sprint card refinements */
+.entity-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.entity-card-main { flex: 1; min-width: 0; }
+.entity-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.entity-card-title { font-weight: 700; font-size: .98rem; }
+.entity-card-sub { font-size: .82rem; color: var(--text-2); margin-top: 2px; }
+.entity-card-actions { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
+.ghost-btn { background: none; border: 1px solid var(--border); color: var(--text-2); box-shadow: none; }
+.ghost-btn:hover { background: var(--surface-3); color: var(--text); box-shadow: none; transform: none; }
+.checkbox-field { flex-direction: row !important; align-items: center; gap: 8px; font-size: .85rem; font-weight: 500; color: var(--text-2); }
+.checkbox-field input { width: auto; accent-color: var(--brand-500); }

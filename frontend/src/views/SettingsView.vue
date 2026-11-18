@@ -37,60 +37,71 @@ async function delSprint(id: number) { if (confirm('Delete sprint?')) { await ap
 
   <h2>Projects</h2>
   <div v-if="projects && projects.length" class="card-list">
-    <div v-for="p in projects" :key="p.id" class="card" :style="{ borderLeft: `3px solid ${p.color}` }">
-      <div class="card-header">
-        <Badge variant="type" :label="p.key" />
-        <strong>{{ p.name }}</strong>
-        <Badge v-if="p.is_archived" variant="warn" label="archived" />
+    <div v-for="p in projects" :key="p.id" class="card entity-card">
+      <div class="entity-card-main">
+        <div class="entity-card-head">
+          <span class="color-dot" :style="{ background: p.color }"></span>
+          <span class="entity-card-title">{{ p.name }}</span>
+          <Badge variant="type" :label="p.key" />
+          <Badge v-if="p.is_archived" variant="warn" label="archived" />
+        </div>
+        <div class="entity-card-sub">{{ p.repo || p.description || 'No repository linked' }}</div>
       </div>
-      <div class="card-meta">
-        <span v-if="p.repo">{{ p.repo }}</span>
-        <span v-if="p.description">{{ p.description }}</span>
-      </div>
-      <div class="card-actions">
-        <button @click="archive(p.id, !p.is_archived)">{{ p.is_archived ? 'Unarchive' : 'Archive' }}</button>
+      <div class="entity-card-actions">
+        <button class="ghost-btn" @click="archive(p.id, !p.is_archived)">{{ p.is_archived ? 'Unarchive' : 'Archive' }}</button>
         <button class="danger" @click="delProject(p.id)">Delete</button>
       </div>
     </div>
   </div>
-  <EmptyState v-else message="No projects yet." />
-  <form class="inline-form" style="margin-top:1rem" @submit.prevent="addProject">
-    <input v-model="pf.name" type="text" placeholder="Project name" required />
-    <input v-model="pf.key" type="text" placeholder="KEY" required style="width:90px;flex:none" />
-    <input v-model="pf.repo" type="text" placeholder="repo (optional)" />
-    <input v-model="pf.color" type="color" style="width:46px;flex:none;padding:3px" />
-    <button type="submit">Add</button>
+  <EmptyState v-else message="No projects yet. Create one below." />
+
+  <form class="form-card" style="margin-top:14px" @submit.prevent="addProject">
+    <div class="form-card-title">New project</div>
+    <div class="form-grid-3">
+      <label class="field"><span class="field-label">Name</span><input v-model="pf.name" type="text" placeholder="Project name" required /></label>
+      <label class="field"><span class="field-label">Key</span><input v-model="pf.key" type="text" placeholder="WL" required /></label>
+      <label class="field"><span class="field-label">Repository</span><input v-model="pf.repo" type="text" placeholder="owner/repo (optional)" /></label>
+    </div>
+    <div class="form-actions" style="justify-content:space-between">
+      <label class="field color-field"><span class="field-label">Color</span><input v-model="pf.color" type="color" /></label>
+      <button type="submit">Add project</button>
+    </div>
   </form>
 
   <h2>Sprints</h2>
   <div v-if="sprints && sprints.length" class="card-list">
-    <div v-for="s in sprints" :key="s.id" class="card">
-      <div class="card-header">
-        <Badge :variant="s.status" :label="s.status" />
-        <strong>{{ s.name }}</strong>
-        <Badge variant="type" :label="projectMap[s.project_id] || '?'" />
+    <div v-for="s in sprints" :key="s.id" class="card entity-card">
+      <div class="entity-card-main">
+        <div class="entity-card-head">
+          <Badge :variant="s.status" :label="s.status" />
+          <span class="entity-card-title">{{ s.name }}</span>
+          <Badge variant="type" :label="projectMap[s.project_id] || '?'" />
+        </div>
+        <div class="entity-card-sub">{{ s.start_date }} → {{ s.end_date }}<template v-if="s.goal"> · {{ s.goal }}</template></div>
       </div>
-      <div class="card-meta">
-        <span>{{ s.start_date }} → {{ s.end_date }}</span>
-        <span v-if="s.goal">Goal: {{ s.goal }}</span>
-      </div>
-      <div class="card-actions">
+      <div class="entity-card-actions">
         <button v-if="s.status === 'planned'" @click="setSprint(s.id, 'active')">Activate</button>
         <button v-if="s.status === 'active'" @click="setSprint(s.id, 'completed')">Complete</button>
         <button class="danger" @click="delSprint(s.id)">Delete</button>
       </div>
     </div>
   </div>
-  <EmptyState v-else message="No sprints yet." />
-  <form id="add-sprint" style="margin-top:1rem" @submit.prevent="addSprint">
-    <select v-model="sf.project_id" required>
-      <option value="">Project</option>
-      <option v-for="p in (projects ?? []).filter(x => !x.is_archived)" :key="p.id" :value="p.id">{{ p.name }}</option>
-    </select>
-    <input v-model="sf.name" type="text" placeholder="Sprint name" required />
-    <input v-model="sf.start_date" type="date" required />
-    <input v-model="sf.end_date" type="date" required />
-    <input v-model="sf.goal" type="text" placeholder="Goal (optional)" />
-    <button type="submit">Add Sprint</button>
+  <EmptyState v-else message="No sprints yet. Create one below." />
+
+  <form class="form-card" style="margin-top:14px" @submit.prevent="addSprint">
+    <div class="form-card-title">New sprint</div>
+    <div class="form-grid-2">
+      <label class="field"><span class="field-label">Project</span>
+        <select v-model="sf.project_id" required>
+          <option value="" disabled>Select project</option>
+          <option v-for="p in (projects ?? []).filter(x => !x.is_archived)" :key="p.id" :value="p.id">{{ p.name }}</option>
+        </select>
+      </label>
+      <label class="field"><span class="field-label">Sprint name</span><input v-model="sf.name" type="text" placeholder="Sprint 1" required /></label>
+      <label class="field"><span class="field-label">Start date</span><input v-model="sf.start_date" type="date" required /></label>
+      <label class="field"><span class="field-label">End date</span><input v-model="sf.end_date" type="date" required /></label>
+      <label class="field form-span"><span class="field-label">Goal</span><input v-model="sf.goal" type="text" placeholder="What should this sprint achieve? (optional)" /></label>
+    </div>
+    <div class="form-actions"><button type="submit">Add sprint</button></div>
   </form>
 </template>

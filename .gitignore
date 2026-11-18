@@ -11,6 +11,11 @@ build/
 .venv/
 venv/
 
+# Frontend
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+
 # Data
 data/
 *.db

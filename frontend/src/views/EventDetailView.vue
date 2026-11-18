@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { api } from '@/api/client'
 import { useToast } from '@/stores/toast'
 import Badge from '@/components/Badge.vue'
+import { displayType } from '@/utils/eventDisplay'
 import type { WorkEvent } from '@/types'
 
 const props = defineProps<{ id: string }>()
@@ -52,7 +53,7 @@ async function snapshot() {
   <div v-if="loading" class="loading">Loading…</div>
   <template v-else-if="event">
     <div class="event-head">
-      <Badge :variant="event.event_type" :label="event.event_type" />
+      <Badge :variant="displayType(event).variant" :label="displayType(event).label" />
       <Badge v-if="event.jira_key" variant="type" :label="event.jira_key" />
       <Badge v-if="event.user_edited" variant="warn" label="edited" />
     </div>
@@ -101,7 +102,7 @@ async function snapshot() {
       <div class="card-list">
         <div v-for="c in children" :key="c.id" class="card subtask-card">
           <div class="card-header">
-            <Badge :variant="c.event_type" :label="c.event_type" />
+            <Badge :variant="displayType(c).variant" :label="displayType(c).label" />
             <Badge v-if="c.jira_key" variant="type" :label="c.jira_key" />
             <RouterLink :to="`/event/${c.id}`"><strong>{{ c.summary }}</strong></RouterLink>
           </div>

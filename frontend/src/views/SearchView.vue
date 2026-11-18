@@ -73,7 +73,7 @@ load()
 <template>
   <h1>Search work history</h1>
   <form class="search-form" @submit.prevent="submit">
-    <input v-model="filters.q" type="text" placeholder="Keywords (Chinese or English)" />
+    <input v-model="filters.q" name="q" type="text" placeholder="Keywords (Chinese or English)" />
     <select v-model="filters.repo">
       <option value="">All repos</option>
       <option v-for="r in repos" :key="r" :value="r">{{ r }}</option>

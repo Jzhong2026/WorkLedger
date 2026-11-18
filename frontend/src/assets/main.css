@@ -122,12 +122,13 @@ code, pre, kbd { font-family: var(--font-mono); font-size: .88em; }
 .badge-manual { background: var(--surface-3); color: var(--text-2); }
 
 /* ============ Buttons ============ */
-button { background: var(--grad); color: #fff; border: none; padding: 9px 18px; border-radius: var(--r-sm); cursor: pointer; font-family: inherit; font-weight: 600; font-size: .85rem; transition: all .2s; box-shadow: 0 1px 2px rgba(37,99,235,.2); }
-button:hover { transform: translateY(-1px); box-shadow: var(--sh-brand); color: #fff; }
-button:active { transform: translateY(0); }
+button { background: var(--brand-500); color: #fff; border: 1px solid transparent; height: 34px; padding: 0 16px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-sm); cursor: pointer; font-family: inherit; font-weight: 600; font-size: .85rem; transition: background .15s, box-shadow .15s; box-shadow: 0 1px 2px rgba(37,99,235,.12); }
+button:hover { background: var(--brand-600); box-shadow: 0 2px 6px rgba(37,99,235,.2); color: #fff; }
+button:active { background: var(--brand-700); }
+button:disabled { opacity: .55; cursor: default; box-shadow: none; }
 button.danger { background: none; border: 1px solid var(--danger); color: var(--danger); box-shadow: none; }
 button.danger:hover { background: var(--danger-soft); box-shadow: none; }
-.card-actions button { padding: 5px 12px; font-size: .78rem; }
+.card-actions button { height: 28px; padding: 0 12px; font-size: .76rem; }
 
 /* ============ Forms ============ */
 label { display: block; font-size: .85rem; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
@@ -250,3 +251,9 @@ input[type="color"]::-webkit-color-swatch { border: none; border-radius: 5px; }
 .ghost-btn:hover { background: var(--surface-3); color: var(--text); box-shadow: none; transform: none; }
 .checkbox-field { flex-direction: row !important; align-items: center; gap: 8px; font-size: .85rem; font-weight: 500; color: var(--text-2); }
 .checkbox-field input { width: auto; accent-color: var(--brand-500); }
+.badge-story { background: var(--brand-soft); color: var(--brand-700); }
+.badge-task { background: var(--info-soft); color: var(--info); }
+.badge-bug { background: var(--danger-soft); color: var(--danger); }
+.badge-epic { background: var(--violet-soft); color: var(--violet); }
+.search-form input[name="q"] { grid-column: 1 / -1; }
+.detail-text { font-family: var(--font-sans); }

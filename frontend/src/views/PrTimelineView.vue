@@ -5,6 +5,7 @@ import { api } from '@/api/client'
 import { useToast } from '@/stores/toast'
 import Badge from '@/components/Badge.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import { displayType } from '@/utils/eventDisplay'
 import type { WorkEvent } from '@/types'
 
 const route = useRoute()
@@ -33,7 +34,7 @@ watch(() => route.query, load, { immediate: true })
       <div class="timeline-dot"></div>
       <div class="card">
         <div class="card-header">
-          <Badge :variant="ev.event_type" :label="ev.event_type" />
+          <Badge :variant="displayType(ev).variant" :label="displayType(ev).label" />
           <RouterLink :to="`/event/${ev.id}`"><strong>{{ ev.summary || '(no summary)' }}</strong></RouterLink>
         </div>
         <div class="card-meta">

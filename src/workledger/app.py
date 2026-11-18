@@ -30,28 +30,25 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(DatabaseError)
     async def db_error_handler(request: Request, exc: DatabaseError):
-        status = 503 if exc.retryable else 500
+        status = exc.status_code or (503 if exc.retryable else 500)
         return JSONResponse(
             status_code=status,
             content={"error": str(exc), "retryable": exc.retryable, "db_path": exc.db_path},
         )
 
-    if (FRONTEND_DIST / "assets").exists():
+    if (FRONTEND_DIST / "assets").is_dir():
         app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa(full_path: str):
-        if full_path.startswith("api"):
+        if full_path == "api" or full_path.startswith("api/"):
             return JSONResponse(status_code=404, content={"error": "Not found"})
-        candidate = FRONTEND_DIST / full_path
-        if full_path and candidate.is_file():
-            return FileResponse(candidate)
         index = FRONTEND_DIST / "index.html"
         if index.exists():
             return FileResponse(index)
         return JSONResponse(
             status_code=503,
-            content={"error": "Frontend not built. Run: cd frontend && npm install && npm run build"},
+            content={"error": "Build the frontend with npm ci and npm run build, then restart WorkLedger."},
         )
 
     return app

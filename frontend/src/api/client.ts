@@ -1,6 +1,10 @@
 import type {
   WorkEvent, Todo, Accomplishment, Case, Project, Sprint,
   InboxNote, EventDraft, Paginated, Insights, Retrospective,
+  AccomplishmentInput, CaseInput, DraftEdit, EventEdit, Narrative,
+  ProjectCreate, ProjectEdit, SnapshotStatus, SprintCreate, SprintEdit,
+  EventSearchFilters, ExpandedSearch, InsightsFilters, SearchExpansion, TodaySummary,
+  TodoCreate, TodoListFilters, TodoUpdate,
 } from '@/types'
 
 const BASE = '/api'
@@ -11,13 +15,36 @@ export class ApiError extends Error {
   }
 }
 
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function responseMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string' && detail) return detail
+  if (Array.isArray(detail)) {
+    const messages = detail.map(item => {
+      if (typeof item?.msg !== 'string') return ''
+      const field = Array.isArray(item.loc) ? item.loc.slice(1).join('.') : ''
+      return field ? `${field}: ${item.msg}` : item.msg
+    }).filter(Boolean)
+    if (messages.length) return messages.join(' · ')
+  }
+  return fallback || 'Request failed. Try again.'
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const opts: RequestInit = { method, headers: { 'Content-Type': 'application/json' } }
   if (body !== undefined) opts.body = JSON.stringify(body)
-  const res = await fetch(BASE + path, opts)
+  let res: Response
+  try {
+    res = await fetch(BASE + path, opts)
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    throw new ApiError('Cannot reach WorkLedger. Check that the server is running and retry.', 0, true)
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new ApiError(err.detail || err.error || 'Request failed', res.status, err.retryable)
+    throw new ApiError(responseMessage(err.detail ?? err.error, res.statusText), res.status, err.retryable)
   }
   if (res.status === 204) return undefined as T
   const ct = res.headers.get('Content-Type') || ''
@@ -33,7 +60,7 @@ const del = <T>(p: string) => request<T>('DELETE', p)
 function qs(params: Record<string, unknown>): string {
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
-    if (v !== null && v !== undefined && v !== '') sp.set(k, String(v))
+    if (v !== null && v !== undefined && (v !== '' || k === 'repo')) sp.set(k, String(v))
   }
   const s = sp.toString()
   return s ? `?${s}` : ''
@@ -41,34 +68,37 @@ function qs(params: Record<string, unknown>): string {
 
 export const api = {
   // Events
-  searchEvents: (p: Record<string, unknown>) => get<Paginated<WorkEvent>>('/events' + qs(p)),
+  searchEvents: (filters: EventSearchFilters) => get<Paginated<WorkEvent>>('/events' + qs({ ...filters })),
   searchFts: (p: Record<string, unknown>) => get<Paginated<WorkEvent>>('/search/fts' + qs(p)),
-  searchSemantic: (question: string) => post<{ expansion: { keywords: string }; items: WorkEvent[]; total: number }>('/search/semantic', { question }),
+  searchSemantic: (question: string) => post<ExpandedSearch>('/search/semantic', { question }),
+  searchExpanded: (expansion: SearchExpansion, page: number) => post<ExpandedSearch>('/search/expanded', { expansion, page }),
   getEvent: (id: number) => get<WorkEvent>(`/events/${id}`),
   getChildren: (id: number) => get<WorkEvent[]>(`/events/${id}/children`),
   createEvent: (b: Partial<WorkEvent>) => post<WorkEvent>('/events', b),
-  updateEvent: (id: number, b: Partial<WorkEvent>) => patch<WorkEvent>(`/events/${id}`, b),
+  updateEvent: (id: number, b: EventEdit) => patch<WorkEvent>(`/events/${id}`, b),
   prTimeline: (repo: string, pr: number) => get<WorkEvent[]>(`/prs/timeline${qs({ repo, pr_number: pr })}`),
   listRepos: () => get<string[]>('/repos'),
-  snapshotEvent: (id: number) => post<{ snapshot_status: string; chars: number }>(`/events/${id}/snapshot`),
+  snapshotEvent: (id: number) => post<{ snapshot_status: SnapshotStatus; chars: number; error: string | null }>(`/events/${id}/snapshot`),
 
   // Todos
-  listTodos: (p: Record<string, unknown> = {}) => get<Paginated<Todo>>('/todos' + qs(p)),
+  listTodos: (filters: TodoListFilters = {}) => get<Paginated<Todo> & { today: string }>('/todos' + qs({ ...filters })),
   todayTodos: () => get<Todo[]>('/todos/today'),
-  createTodo: (b: Partial<Todo>) => post<Todo>('/todos', b),
-  updateTodo: (id: number, b: Partial<Todo>) => patch<Todo>(`/todos/${id}`, b),
+  todaySummary: () => get<TodaySummary>('/todos/today-summary'),
+  createTodo: (b: TodoCreate) => post<Todo>('/todos', b),
+  updateTodo: (id: number, b: TodoUpdate) => patch<Todo>(`/todos/${id}`, b),
   deleteTodo: (id: number) => del<void>(`/todos/${id}`),
 
   // Accomplishments & cases
   listAccomplishments: (p: Record<string, unknown> = {}) => get<Paginated<Accomplishment>>('/accomplishments' + qs(p)),
-  createAccomplishment: (b: Partial<Accomplishment>) => post<Accomplishment>('/accomplishments', b),
+  createAccomplishment: (b: AccomplishmentInput) => post<Accomplishment>('/accomplishments', b),
   listCases: (p: Record<string, unknown> = {}) => get<Paginated<Case>>('/cases' + qs(p)),
-  createCase: (b: Partial<Case>) => post<Case>('/cases', b),
-  retrospective: (period: string) => get<Retrospective>('/retrospective' + qs({ period })),
+  createCase: (b: CaseInput) => post<Case>('/cases', b),
+  retrospective: (period: string, page: number, page_size: number) =>
+    get<Retrospective>('/retrospective' + qs({ period, page, page_size })),
 
   // Export
   exportMarkdown: (period: string) => get<string>('/export' + qs({ period })),
-  exportNarrative: (period: string) => post<{ narrative: string }>('/export/narrative', { period }),
+  exportNarrative: (period: string) => post<Narrative>('/export/narrative', { period }),
 
   // Inbox
   listInbox: (status?: string) => get<InboxNote[]>('/inbox' + qs({ status })),
@@ -76,20 +106,22 @@ export const api = {
   structureNote: (id: number) => post<{ drafts: EventDraft[] }>(`/inbox/${id}/structure`),
   discardNote: (id: number) => post<void>(`/inbox/${id}/discard`),
   listDrafts: (status = 'pending') => get<EventDraft[]>('/drafts' + qs({ status })),
-  confirmDraft: (id: number) => post<{ event: WorkEvent }>(`/drafts/${id}/confirm`),
+  updateDraft: (id: number, data: DraftEdit) => patch<EventDraft>(`/drafts/${id}`, data),
+  confirmDraft: (id: number, data: DraftEdit) => post<{ event: WorkEvent }>(`/drafts/${id}/confirm`, data),
+  commitNote: (id: number, data: DraftEdit) => post<{ event: WorkEvent }>(`/inbox/${id}/commit`, data),
   discardDraft: (id: number) => post<void>(`/drafts/${id}/discard`),
 
   // Master data
   listProjects: (includeArchived = false) => get<Project[]>('/projects' + qs({ include_archived: includeArchived })),
-  createProject: (b: Partial<Project>) => post<Project>('/projects', b),
-  updateProject: (id: number, b: Partial<Project>) => patch<Project>(`/projects/${id}`, b),
+  createProject: (b: ProjectCreate) => post<Project>('/projects', b),
+  updateProject: (id: number, b: ProjectEdit) => patch<Project>(`/projects/${id}`, b),
   deleteProject: (id: number) => del<void>(`/projects/${id}`),
   listSprints: (p: Record<string, unknown> = {}) => get<Sprint[]>('/sprints' + qs(p)),
-  createSprint: (b: Partial<Sprint>) => post<Sprint>('/sprints', b),
-  updateSprint: (id: number, b: Partial<Sprint>) => patch<Sprint>(`/sprints/${id}`, b),
+  createSprint: (b: SprintCreate) => post<Sprint>('/sprints', b),
+  updateSprint: (id: number, b: SprintEdit) => patch<Sprint>(`/sprints/${id}`, b),
   deleteSprint: (id: number) => del<void>(`/sprints/${id}`),
 
   // Insights & agent
-  insights: () => get<Insights>('/insights'),
+  insights: (filters: InsightsFilters = {}) => get<Insights>('/insights' + qs({ ...filters })),
   agentStatus: () => get<{ enabled: boolean; model: string; cli_available: boolean; key_configured: boolean }>('/agent/status'),
 }

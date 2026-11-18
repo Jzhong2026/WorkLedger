@@ -107,21 +107,16 @@ Or if installed as a package:
 ### Inbox workflow
 
 `capture_note` → `structure_note` (LLM drafts) → human reviews → `confirm_draft` (commits).
-Drafts are never auto-committed; confirmation protects evidence integrity. Without an agent key,
-notes stay raw and can be converted manually via `record_event`.
+The web Inbox can record a note manually without CodeBuddy. AI drafting requires an
+enabled and configured CodeBuddy CLI.
 
 ## Source identity and deduplication
 
-Every event has a `source_key`. If omitted, it is auto-generated:
-- With repo + PR + comment: `{event_type}:{repo}:{pr_number}:{comment_id}`
-- With repo + PR only: `{event_type}:{repo}:{pr_number}`
-- Manual/no context: `{event_type}:{uuid}`
-
-**Rules:**
-- Same `source_key` → returns existing record, no duplicate created
-- Different `event_type` on the same comment → independent records (review, fix, reply are separate)
-- Retry after failure with the same `source_key` is safe and idempotent
-- To-dos also deduplicate by `source_key` when provided
+Every event has a `source_key`. WorkLedger fingerprints the event payload when the
+key is omitted, so distinct events can share a PR, comment, and type. Reuse the same
+key and payload for a retry. If an explicit key already identifies different
+content, the response includes the existing event and `source_conflict: true`.
+To-dos also deduplicate when a `source_key` is provided.
 
 ## Evidence rules
 
@@ -155,7 +150,8 @@ Every event has a `source_key`. If omitted, it is auto-generated:
 
 ### Backfilling a historical PR
 
-Use the same tools with past `occurred_at` dates. Provide explicit `source_key` if the auto-generated key might collide with a different action.
+Use the same tools with past `occurred_at` dates. Use a stable explicit `source_key`
+when the upstream system supplies a unique identifier for the action.
 
 ### Partial access
 

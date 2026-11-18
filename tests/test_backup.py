@@ -1,7 +1,7 @@
 """Tests for #498: backup, restore, upgrade, error states."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -18,7 +18,7 @@ class TestBackupRestore:
         conn = get_connection(db_path)
         create_event(conn, EventCreate(
             event_type="manual",
-            occurred_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            occurred_at=datetime(2026, 3, 1, tzinfo=UTC),
             summary="Important record",
             source_key="backup:test",
         ))
@@ -36,7 +36,7 @@ class TestBackupRestore:
         items, total = search_events(conn2)
         assert total == 1
         assert items[0]["summary"] == "Important record"
-        todos_list, todo_total = list_todos(conn2)
+        _, todo_total = list_todos(conn2)
         assert todo_total == 1
 
     def test_restore_invalid_file(self, db_path, tmp_path):
@@ -55,7 +55,7 @@ class TestUpgrade:
         conn = get_connection(db_path)
         create_event(conn, EventCreate(
             event_type="fix",
-            occurred_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+            occurred_at=datetime(2026, 5, 1, tzinfo=UTC),
             summary="Pre-upgrade record",
             source_key="upgrade:test",
         ))

@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..db import DatabaseError
 from ..schemas import AccomplishmentCreate, AccomplishmentUpdate, CaseCreate, CaseUpdate
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _bool_fields(d: dict, fields: tuple[str, ...]) -> dict:
@@ -17,6 +17,13 @@ def _bool_fields(d: dict, fields: tuple[str, ...]) -> dict:
         if k in d:
             d[k] = bool(d[k])
     return d
+
+
+def _check_source_event(conn: sqlite3.Connection, event_id: int | None) -> None:
+    if event_id is not None and not conn.execute(
+        "SELECT 1 FROM work_events WHERE id = ?", (event_id,)
+    ).fetchone():
+        raise DatabaseError(f"Source event {event_id} not found.", status_code=404)
 
 
 # --- Accomplishments ---
@@ -33,15 +40,16 @@ def create_accomplishment(conn: sqlite3.Connection, data: AccomplishmentCreate) 
             return _bool_fields(dict(existing), ("is_highlight", "user_edited"))
 
     with conn:
+        _check_source_event(conn, data.event_id)
         conn.execute(
             """INSERT INTO accomplishments
                (title, description, occurred_at, impact, impact_evidence_url,
-                is_highlight, tags, source_key, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                is_highlight, tags, source_key, created_at, updated_at, event_id)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 data.title, data.description, occurred, data.impact,
                 data.impact_evidence_url, int(data.is_highlight), data.tags,
-                data.source_key, now, now,
+                data.source_key, now, now, data.event_id,
             ),
         )
         row = conn.execute("SELECT * FROM accomplishments WHERE id = last_insert_rowid()").fetchone()
@@ -124,15 +132,17 @@ def create_case(conn: sqlite3.Connection, data: CaseCreate) -> dict:
             return _bool_fields(dict(existing), ("root_cause_confirmed", "verification_done", "user_edited"))
 
     with conn:
+        _check_source_event(conn, data.event_id)
         conn.execute(
             """INSERT INTO cases
                (title, phenomenon, root_cause, root_cause_confirmed, solution,
-                verification, verification_done, occurred_at, tags, source_key, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                verification, verification_done, occurred_at, tags, source_key, created_at,
+                updated_at, event_id, evidence_url)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 data.title, data.phenomenon, data.root_cause, int(data.root_cause_confirmed),
                 data.solution, data.verification, int(data.verification_done),
-                occurred, data.tags, data.source_key, now, now,
+                occurred, data.tags, data.source_key, now, now, data.event_id, data.evidence_url,
             ),
         )
         row = conn.execute("SELECT * FROM cases WHERE id = last_insert_rowid()").fetchone()

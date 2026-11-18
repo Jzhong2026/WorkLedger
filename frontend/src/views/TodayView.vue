@@ -1,67 +1,98 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 import { api } from '@/api/client'
 import { useAsync } from '@/composables/useAsync'
-import { useToast } from '@/stores/toast'
+import { useTodoActions } from '@/composables/useTodoActions'
 import StatCard from '@/components/StatCard.vue'
 import TodoCard from '@/components/TodoCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
-const toast = useToast()
-const today = new Date().toISOString().slice(0, 10)
-const { data: todos, loading, run } = useAsync(() => api.todayTodos())
-const { data: all } = useAsync(() => api.listTodos({ page_size: 100 }))
-
-const stats = computed(() => {
-  const items = all.value?.items ?? []
-  return {
-    pending: items.filter(t => t.status === 'pending').length,
-    waiting: items.filter(t => t.status === 'waiting').length,
-    done: items.filter(t => t.status === 'done').length,
-  }
-})
-
+const { data, loading, error, run } = useAsync(() => api.todaySummary())
+const { busy, add, complete, reopen, wait, remove } = useTodoActions(run)
 const title = ref('')
 const followup = ref('')
+
+const sections = [
+  { key: 'overdue', label: 'Overdue' },
+  { key: 'today', label: 'Due or follow up today' },
+  { key: 'unscheduled', label: 'Unscheduled' },
+] as const
+
+const groups = computed(() => {
+  const summary = data.value
+  if (!summary) return []
+
+  return sections
+    .map(section => ({ ...section, todos: summary.groups[section.key] }))
+    .filter(section => section.todos.length)
+})
+
 async function addTodo() {
-  if (!title.value.trim()) return
-  await api.createTodo({ title: title.value, next_followup: followup.value || null })
-  title.value = ''; followup.value = ''
-  toast.success('To-do added')
-  run()
-}
-async function onComplete(id: number) { await api.updateTodo(id, { status: 'done' }); run() }
-async function onReopen(id: number) { await api.updateTodo(id, { status: 'pending' }); run() }
-async function onWait(id: number) {
-  const target = prompt('Waiting for whom/what?')
-  if (target === null) return
-  await api.updateTodo(id, { status: 'waiting', wait_target: target }); run()
-}
-async function onRemove(id: number) {
-  if (!confirm('Delete this to-do?')) return
-  await api.deleteTodo(id); run()
+  const text = title.value.trim()
+  if (text && await add({ title: text, next_followup: followup.value || null })) {
+    title.value = ''
+    followup.value = ''
+  }
 }
 </script>
 
 <template>
-  <h1>Today <small>{{ today }}</small></h1>
-  <div class="stat-row">
-    <StatCard :value="stats.pending" label="Pending" />
-    <StatCard :value="stats.waiting" label="Waiting" tone="gold" />
-    <StatCard :value="stats.done" label="Done" tone="rust" />
-  </div>
-
-  <h2>Follow-ups</h2>
-  <div v-if="loading" class="loading">Loading…</div>
-  <div v-else-if="todos && todos.length" class="card-list">
-    <TodoCard v-for="t in todos" :key="t.id" :todo="t" @complete="onComplete" @reopen="onReopen" @wait="onWait" @remove="onRemove" />
-  </div>
-  <EmptyState v-else illustration message="Nothing needs follow-up today. Enjoy the clear page." />
-
-  <h2>Quick add</h2>
-  <form class="inline-form" @submit.prevent="addTodo">
-    <input v-model="title" type="text" placeholder="What needs follow-up?" required />
-    <input v-model="followup" type="date" title="Next follow-up date" />
-    <button type="submit">Add</button>
+  <h1>Today <small v-if="data">{{ data.today }}</small></h1>
+  <form class="form-card today-entry" @submit.prevent="addTodo">
+    <label class="field">
+      <span class="field-label">Quick add</span>
+      <input v-model="title" type="text" placeholder="What needs follow-up?" required />
+    </label>
+    <label class="field">
+      <span class="field-label">Follow-up date</span>
+      <input v-model="followup" type="date" />
+    </label>
+    <button type="submit" :disabled="busy">Add to-do</button>
   </form>
+
+  <div v-if="error" class="error-banner">
+    <span role="alert">Could not load today's to-dos. {{ error }}</span>
+    <button type="button" @click="run">Retry</button>
+  </div>
+  <div v-else-if="loading && !data" class="loading" role="status">Loading to-dos…</div>
+  <template v-else-if="data">
+    <div class="stat-row" aria-label="All to-dos by status">
+      <StatCard :value="data.counts.pending" label="Pending" />
+      <StatCard :value="data.counts.waiting" label="Waiting" tone="gold" />
+      <StatCard :value="data.counts.done" label="Done" tone="green" />
+    </div>
+
+    <section v-for="group in groups" :key="group.key" :aria-labelledby="`today-${group.key}`">
+      <h2 :id="`today-${group.key}`">{{ group.label }}</h2>
+      <div class="card-list">
+        <TodoCard
+          v-for="todo in group.todos"
+          :key="todo.id"
+          :todo="todo"
+          :today="data.today"
+          :busy="busy"
+          @complete="complete"
+          @reopen="reopen"
+          :save-waiting="wait"
+          @remove="remove"
+        />
+      </div>
+    </section>
+    <EmptyState v-if="!groups.length" message="Nothing needs follow-up today." />
+  </template>
 </template>
+
+<style scoped>
+.today-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 11rem) auto;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 600px) {
+  .today-entry { grid-template-columns: minmax(0, 1fr); }
+  .today-entry button { justify-self: start; }
+}
+</style>

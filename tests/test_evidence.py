@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
 from workledger.db import DatabaseError
-from workledger.schemas import EventCreate
+from workledger.schemas import EventCreate, EventUpdate
 from workledger.services import events, evidence
 
 
@@ -60,13 +60,13 @@ class TestCapture:
             evidence.capture_snapshot(conn, 999)
 
     def test_no_url(self, conn):
-        ev = events.create_event(conn, EventCreate(event_type="manual", occurred_at=datetime(2026, 6, 1, tzinfo=timezone.utc), summary="no url"))
+        ev = events.create_event(conn, EventCreate(event_type="manual", occurred_at=datetime(2026, 6, 1, tzinfo=UTC), summary="no url"))
         with pytest.raises(DatabaseError, match="no evidence_url"):
             evidence.capture_snapshot(conn, ev["id"])
 
     def test_capture_stores_snapshot(self, conn, monkeypatch):
         ev = events.create_event(conn, EventCreate(
-            event_type="fix", occurred_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            event_type="fix", occurred_at=datetime(2026, 6, 1, tzinfo=UTC),
             summary="x", evidence_url="https://example.com/c",
         ))
         monkeypatch.setattr(evidence, "fetch_url_text", lambda url: {"status": "captured", "text": "snapshot body", "error": None})
@@ -76,3 +76,41 @@ class TestCapture:
         stored = events.get_event(conn, ev["id"])
         assert stored["evidence_snapshot"] == "snapshot body"
         assert stored["snapshot_status"] == "captured"
+
+    def test_failed_recap_preserves_saved_body_time_and_source(self, conn, monkeypatch):
+        original_url = "https://example.com/old"
+        ev = events.create_event(conn, EventCreate(
+            event_type="fix", occurred_at=datetime(2026, 6, 1, tzinfo=UTC),
+            summary="x", evidence_url=original_url,
+        ))
+        results = iter([
+            {"status": "captured", "text": "snapshot body", "error": None},
+            {"status": "failed", "text": None, "error": "timed out"},
+        ])
+        monkeypatch.setattr(evidence, "fetch_url_text", lambda url: next(results))
+        first = evidence.capture_snapshot(conn, ev["id"])
+        events.update_event(conn, ev["id"], EventUpdate(evidence_url="https://example.com/new"))
+        evidence.capture_snapshot(conn, ev["id"])
+        stored = events.get_event(conn, ev["id"])
+        assert stored["snapshot_status"] == "failed"
+        assert stored["snapshot_error"] == "timed out"
+        assert stored["snapshot_attempt_at"]
+        assert stored["evidence_snapshot"] == "snapshot body"
+        assert stored["snapshot_at"] == first["snapshot_at"]
+        assert stored["snapshot_source_url"] == original_url
+
+    def test_url_changed_during_capture_rejects_stale_result(self, conn, monkeypatch):
+        event = events.create_event(conn, EventCreate(
+            event_type="manual", occurred_at=datetime(2026, 6, 1, tzinfo=UTC),
+            evidence_url="https://example.com/old",
+        ))
+
+        def fetch(url):
+            events.update_event(conn, event["id"], EventUpdate(evidence_url="https://example.com/new"))
+            return {"status": "captured", "text": "stale content", "error": None}
+
+        monkeypatch.setattr(evidence, "fetch_url_text", fetch)
+        with pytest.raises(DatabaseError, match="evidence URL changed") as exc:
+            evidence.capture_snapshot(conn, event["id"])
+        assert exc.value.status_code == 409
+        assert events.get_event(conn, event["id"])["evidence_snapshot"] is None

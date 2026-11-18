@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from ..db import DatabaseError
+from ..db import DatabaseError, write_transaction
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
 
 # --- Projects ---
@@ -16,7 +16,7 @@ def _now() -> str:
 def create_project(conn: sqlite3.Connection, *, name: str, key: str, repo: str | None = None, description: str | None = None, color: str = "#2563eb") -> dict:
     now = _now()
     try:
-        with conn:
+        with write_transaction(conn):
             conn.execute(
                 "INSERT INTO projects (name, key, repo, description, color, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
                 (name, key.upper(), repo, description, color, now, now),
@@ -25,8 +25,8 @@ def create_project(conn: sqlite3.Connection, *, name: str, key: str, repo: str |
         return dict(row)
     except sqlite3.IntegrityError as e:
         if "UNIQUE" in str(e):
-            raise DatabaseError(f"Project key '{key}' already exists.") from e
-        raise DatabaseError(f"Invalid project data: {e}") from e
+            raise DatabaseError(f"Project key '{key}' already exists.", status_code=409) from e
+        raise DatabaseError(f"Invalid project data: {e}", status_code=422) from e
 
 
 def get_project(conn: sqlite3.Connection, project_id: int) -> dict | None:
@@ -47,7 +47,10 @@ def update_project(conn: sqlite3.Connection, project_id: int, **fields) -> dict 
     if not existing:
         return None
     allowed = {"name", "key", "repo", "description", "color", "is_archived"}
-    updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    updates = {
+        k: v for k, v in fields.items()
+        if k in allowed and (v is not None or k in {"repo", "description"})
+    }
     if not updates:
         return dict(existing)
     if "key" in updates:
@@ -58,7 +61,7 @@ def update_project(conn: sqlite3.Connection, project_id: int, **fields) -> dict 
         with conn:
             conn.execute(f"UPDATE projects SET {set_clause} WHERE id = ?", list(updates.values()) + [project_id])
     except sqlite3.IntegrityError as e:
-        raise DatabaseError(f"Project key conflict: {e}") from e
+        raise DatabaseError(f"Project key conflict: {e}", status_code=409) from e
     return get_project(conn, project_id)
 
 
@@ -73,7 +76,9 @@ def delete_project(conn: sqlite3.Connection, project_id: int) -> bool:
 def create_sprint(conn: sqlite3.Connection, *, project_id: int, name: str, start_date: str, end_date: str, goal: str | None = None, status: str = "planned") -> dict:
     proj = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not proj:
-        raise DatabaseError(f"Project {project_id} not found.")
+        raise DatabaseError(f"Project {project_id} not found.", status_code=404)
+    if end_date < start_date:
+        raise DatabaseError("End date must be on or after the start date.", status_code=422)
     now = _now()
     with conn:
         conn.execute(
@@ -108,18 +113,21 @@ def update_sprint(conn: sqlite3.Connection, sprint_id: int, **fields) -> dict | 
     if not existing:
         return None
     allowed = {"name", "goal", "start_date", "end_date", "status"}
-    updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    updates = {
+        k: v for k, v in fields.items() if k in allowed and (v is not None or k == "goal")
+    }
     if not updates:
         return dict(existing)
-    if updates.get("status") == "active":
-        with conn:
+    if updates.get("end_date", existing["end_date"]) < updates.get("start_date", existing["start_date"]):
+        raise DatabaseError("End date must be on or after the start date.", status_code=422)
+    updates["updated_at"] = _now()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    with conn:
+        if updates.get("status") == "active":
             conn.execute(
                 "UPDATE sprints SET status = 'planned' WHERE project_id = ? AND status = 'active' AND id != ?",
                 (existing["project_id"], sprint_id),
             )
-    updates["updated_at"] = _now()
-    set_clause = ", ".join(f"{k} = ?" for k in updates)
-    with conn:
         conn.execute(f"UPDATE sprints SET {set_clause} WHERE id = ?", list(updates.values()) + [sprint_id])
     return get_sprint(conn, sprint_id)
 

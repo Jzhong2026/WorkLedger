@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..db import DatabaseError
 from ..schemas import TodoCreate, TodoUpdate
@@ -13,7 +13,7 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
 
 
 def create_todo(conn: sqlite3.Connection, data: TodoCreate) -> dict:
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
     if data.source_key:
         existing = conn.execute(
@@ -59,29 +59,34 @@ def get_todo(conn: sqlite3.Connection, todo_id: int) -> dict | None:
 
 
 def update_todo(conn: sqlite3.Connection, todo_id: int, data: TodoUpdate) -> dict | None:
-    existing = conn.execute("SELECT * FROM todos WHERE id = ?", (todo_id,)).fetchone()
-    if not existing:
-        return None
-
-    updates = data.model_dump(exclude_none=True)
+    updates = data.model_dump(exclude_unset=True)
+    for required in ("title", "status"):
+        if updates.get(required) is None:
+            updates.pop(required, None)
     if not updates:
-        return _row_to_dict(existing)
+        return get_todo(conn, todo_id)
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    set_clauses = [f"{field} = ?" for field in updates]
+    params = list(updates.values())
 
     if "status" in updates:
-        if updates["status"] == "done" and existing["status"] != "done":
-            updates["completed_at"] = now
-        elif updates["status"] != "done" and existing["status"] == "done":
-            updates["completed_at"] = None
-
-    set_clauses = [f"{k} = ?" for k in updates]
+        if updates["status"] == "done":
+            set_clauses.append("completed_at = COALESCE(completed_at, ?)")
+            params.append(now)
+        else:
+            set_clauses.append("completed_at = NULL")
     set_clauses.append("updated_at = ?")
-    params = list(updates.values()) + [now, todo_id]
+    params.extend((now, todo_id))
 
-    with conn:
-        conn.execute(f"UPDATE todos SET {', '.join(set_clauses)} WHERE id = ?", params)
-    return get_todo(conn, todo_id)
+    try:
+        with conn:
+            row = conn.execute(
+                f"UPDATE todos SET {', '.join(set_clauses)} WHERE id = ? RETURNING *", params,
+            ).fetchone()
+    except sqlite3.IntegrityError as exc:
+        raise DatabaseError(f"Invalid todo data: {exc}") from exc
+    return _row_to_dict(row) if row else None
 
 
 def list_todos(
@@ -90,6 +95,9 @@ def list_todos(
     status: str | None = None,
     due_today: str | None = None,
     followup_today: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    project_id: int | None = None,
     page: int = 1,
     page_size: int = 50,
 ) -> tuple[list[dict], int]:
@@ -97,22 +105,36 @@ def list_todos(
     params: list = []
 
     if status:
-        conditions.append("status = ?")
+        conditions.append("t.status = ?")
         params.append(status)
     if due_today:
-        conditions.append("due_date <= ? AND status != 'done'")
+        conditions.append("t.due_date <= ? AND t.status != 'done'")
         params.append(due_today)
     if followup_today:
-        conditions.append("next_followup <= ? AND status != 'done'")
+        conditions.append("t.next_followup <= ? AND t.status != 'done'")
         params.append(followup_today)
+    if date_from:
+        conditions.append("t.created_at >= ?")
+        params.append(date_from)
+    if date_to:
+        conditions.append("t.created_at <= ?")
+        params.append(f"{date_to} 23:59:59")
+    source = "FROM todos t"
+    if project_id is not None:
+        source += " LEFT JOIN work_events e ON t.event_id = e.id"
+        if project_id == 0:
+            conditions.append("COALESCE(t.project_id, e.project_id) IS NULL")
+        else:
+            conditions.append("COALESCE(t.project_id, e.project_id) = ?")
+            params.append(project_id)
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    total = conn.execute(f"SELECT COUNT(*) AS c FROM todos {where}", params).fetchone()["c"]
+    total = conn.execute(f"SELECT COUNT(*) AS c {source} {where}", params).fetchone()["c"]
     offset = (page - 1) * page_size
     rows = conn.execute(
-        f"SELECT * FROM todos {where} ORDER BY "
-        "CASE status WHEN 'pending' THEN 0 WHEN 'waiting' THEN 1 ELSE 2 END, "
-        "COALESCE(next_followup, due_date, '9999') ASC, id ASC LIMIT ? OFFSET ?",
+        f"SELECT t.* {source} {where} ORDER BY "
+        "CASE t.status WHEN 'pending' THEN 0 WHEN 'waiting' THEN 1 ELSE 2 END, "
+        "COALESCE(t.next_followup, t.due_date, '9999') ASC, t.id ASC LIMIT ? OFFSET ?",
         params + [page_size, offset],
     ).fetchall()
     return [_row_to_dict(r) for r in rows], total
@@ -129,6 +151,27 @@ def today_todos(conn: sqlite3.Connection, today: str) -> list[dict]:
         (today, today, today, today),
     ).fetchall()
     return [_row_to_dict(r) for r in rows]
+
+
+def today_summary(conn: sqlite3.Connection, today: str) -> dict:
+    counts = {"pending": 0, "waiting": 0, "done": 0}
+    groups: dict[str, list[dict]] = {"overdue": [], "today": [], "unscheduled": []}
+    conn.execute("SAVEPOINT todo_summary")
+    try:
+        for row in conn.execute("SELECT status, COUNT(*) AS count FROM todos GROUP BY status"):
+            counts[row["status"]] = row["count"]
+
+        for item in today_todos(conn, today):
+            dates = [value for value in (item["due_date"], item["next_followup"]) if value]
+            if not dates:
+                groups["unscheduled"].append(item)
+            elif min(dates) < today:
+                groups["overdue"].append(item)
+            else:
+                groups["today"].append(item)
+    finally:
+        conn.execute("RELEASE SAVEPOINT todo_summary")
+    return {"today": today, "counts": counts, "groups": groups}
 
 
 def delete_todo(conn: sqlite3.Connection, todo_id: int) -> bool:

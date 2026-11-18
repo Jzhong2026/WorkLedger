@@ -1,9 +1,6 @@
 """Shared test fixtures."""
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from workledger.db import close_connection, init_db

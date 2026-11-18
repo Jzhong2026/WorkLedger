@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 from .config import settings
 
@@ -15,13 +17,13 @@ def _cli_base() -> list[str] | None:
         return None
     if path.lower().endswith((".cmd", ".bat")):
         # Invoke node directly on the JS entry to avoid cmd.exe mangling multi-line prompts.
-        from pathlib import Path
         base_dir = Path(path).parent
         entry = base_dir / "node_modules" / "@tencent-ai" / "codebuddy-code" / "bin" / "codebuddy"
         node = shutil.which("node") or str(base_dir / "node.exe")
         if entry.exists():
             return [node, str(entry)]
-        return ["cmd", "/c", path]
+        # A shell shim would interpret characters in the prompt instead of passing argv.
+        return None
     return [path]
 
 
@@ -37,7 +39,7 @@ class AgentStatus:
 
 def get_agent_status() -> AgentStatus:
     key_configured = bool(settings.codebuddy_api_key)
-    cli_available = _check_cli()
+    cli_available = _cli_base() is not None
     return AgentStatus(
         enabled=settings.agent_enabled,
         model=settings.agent_model,
@@ -48,31 +50,25 @@ def get_agent_status() -> AgentStatus:
     )
 
 
-def _check_cli() -> bool:
-    base = _cli_base()
-    if not base:
-        return False
-    try:
-        result = subprocess.run(base + ["--version"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
+_NO_TOOLS = ["--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}']
+_MAX_PROMPT_CHARS = 10_000
 
 
 def test_connection(model: str | None = None) -> dict:
     if not settings.codebuddy_api_key:
         return {"ok": False, "error": "No API key configured. Set CODEBUDDY_API_KEY in .env or via settings."}
-    if not _check_cli():
+    base = _cli_base()
+    if not base:
         return {"ok": False, "error": "CodeBuddy CLI not found. Install it and ensure it is on PATH."}
 
     chosen_model = model or settings.agent_model
     model_id = MODELS.get(chosen_model, {}).get("verified_id") or chosen_model
     try:
         result = subprocess.run(
-            _cli_base() + ["-p", "--model", model_id, "--output-format", "text",
-             "Reply with exactly: WORKLEDGER_OK"],
+            base + ["-p", "--model", model_id, "--output-format", "text", *_NO_TOOLS,
+                    "Reply with exactly: WORKLEDGER_OK"],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
-            env=_cli_env(),
+            env=_cli_env(), check=False,
         )
         if result.returncode != 0:
             return {"ok": False, "error": f"CLI exited {result.returncode}: {result.stderr[:500]}", "model": model_id}
@@ -84,12 +80,11 @@ def test_connection(model: str | None = None) -> dict:
         }
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "CLI timed out (60s). Check network or model availability.", "model": model_id}
-    except Exception as e:
-        return {"ok": False, "error": str(e), "model": model_id}
+    except OSError:
+        return {"ok": False, "error": "CodeBuddy CLI could not start.", "model": model_id}
 
 
 def _cli_env() -> dict:
-    import os
     env = os.environ.copy()
     env["CODEBUDDY_API_KEY"] = settings.codebuddy_api_key
     return env
@@ -108,20 +103,28 @@ def _model_id(model: str | None = None) -> str:
 
 def _run_cli(prompt: str, *, json_schema: dict | None = None, model: str | None = None, timeout: int = 90) -> dict:
     """Run CodeBuddy CLI in print mode, return {ok, text, error}. text is the assistant output."""
+    if not settings.agent_enabled:
+        return {"ok": False, "error": "Built-in AI is disabled. Set AGENT_ENABLED=true to use CodeBuddy."}
     if not settings.codebuddy_api_key:
         return {"ok": False, "error": "No API key configured. Agent features need CODEBUDDY_API_KEY."}
-    if not _check_cli():
+    if len(prompt.encode("utf-16-le")) // 2 > _MAX_PROMPT_CHARS:
+        return {"ok": False, "error": "Input is too long for CodeBuddy. Shorten it or continue manually."}
+    base = _cli_base()
+    if not base:
         return {"ok": False, "error": "CodeBuddy CLI not found on PATH."}
-    cmd = _cli_base() + ["-p", "--model", _model_id(model), "--output-format", "json"]
+    cmd = base + ["-p", "--model", _model_id(model), "--output-format", "json", *_NO_TOOLS]
     if json_schema:
         cmd += ["--json-schema", json.dumps(json_schema)]
-    else:
-        cmd += ["--tools", ""]
     cmd.append(prompt)
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, env=_cli_env())
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout, env=_cli_env(), check=False,
+        )
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": f"CLI timed out ({timeout}s)."}
+    except OSError:
+        return {"ok": False, "error": "CodeBuddy CLI could not start. Check the installation and retry."}
     if result.returncode != 0:
         return {"ok": False, "error": f"CLI exited {result.returncode}: {result.stderr[:300]}"}
     try:
@@ -130,7 +133,11 @@ def _run_cli(prompt: str, *, json_schema: dict | None = None, model: str | None 
         return {"ok": False, "error": "CLI output was not valid JSON."}
     text = ""
     structured = None
+    if not isinstance(messages, list):
+        return {"ok": False, "error": "CodeBuddy returned an unexpected response."}
     for msg in messages:
+        if not isinstance(msg, dict):
+            continue
         if msg.get("type") == "result" and msg.get("structured_output") is not None:
             structured = msg["structured_output"]
         if msg.get("type") == "message" and msg.get("role") == "assistant":
@@ -186,8 +193,8 @@ def structure_note(raw_text: str, *, model: str | None = None) -> dict:
                 parsed = json.loads(res["text"])
             except json.JSONDecodeError:
                 continue
-        events = parsed.get("events", [])
-        if events:
+        events = parsed.get("events") if isinstance(parsed, dict) else None
+        if isinstance(events, list) and events and all(isinstance(event, dict) for event in events):
             return {"ok": True, "events": events}
     return {"ok": False, "error": "Model returned no events after retry."}
 
@@ -217,7 +224,7 @@ def expand_query(question: str, *, model: str | None = None) -> dict:
                 parsed = json.loads(res["text"])
             except json.JSONDecodeError:
                 continue
-        if parsed.get("keywords"):
+        if isinstance(parsed, dict) and isinstance(parsed.get("keywords"), str) and parsed["keywords"].strip():
             return {"ok": True, **parsed}
     return {"ok": False, "error": "Model returned no keywords after retry."}
 
@@ -232,4 +239,6 @@ def synthesize_narrative(records_markdown: str, period: str, *, model: str | Non
     res = _run_cli(prompt, model=model, timeout=120)
     if not res["ok"]:
         return res
+    if not res["text"].strip():
+        return {"ok": False, "error": "CodeBuddy returned an empty narrative. Retry or export Markdown."}
     return {"ok": True, "narrative": res["text"]}

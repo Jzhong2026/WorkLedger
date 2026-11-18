@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def _validate_url(v: str | None) -> str | None:
@@ -66,6 +66,23 @@ class EventUpdate(BaseModel):
     def check_evidence_url(cls, v):
         return _validate_url(v)
 
+    @field_validator("summary", "root_cause_confirmed", "verification_done")
+    @classmethod
+    def check_nonnullable_fields(cls, v):
+        if v is None:
+            raise ValueError("This field cannot be null")
+        return v
+
+
+class EventDraftUpdate(EventUpdate):
+    model_config = ConfigDict(extra="forbid")
+
+    event_type: EventType | None = None
+    occurred_at: datetime | None = None
+    repo: str | None = None
+    pr_number: int | None = None
+    comment_id: str | None = None
+
 
 class EventOut(BaseModel):
     id: int
@@ -90,6 +107,13 @@ class EventOut(BaseModel):
     user_edited: bool
     created_at: str
     updated_at: str
+    evidence_snapshot: str | None = None
+    snapshot_status: Literal["captured", "failed", "inaccessible"] | None = None
+    snapshot_at: str | None = None
+    snapshot_attempt_at: str | None = None
+    snapshot_error: str | None = None
+    snapshot_source_url: str | None = None
+    source_conflict: bool = False
 
 
 class TodoCreate(BaseModel):
@@ -137,6 +161,7 @@ class AccomplishmentCreate(BaseModel):
     is_highlight: bool = False
     tags: str | None = None
     source_key: str | None = None
+    event_id: int | None = Field(default=None, gt=0)
 
     @field_validator("impact_evidence_url")
     @classmethod
@@ -168,6 +193,7 @@ class AccomplishmentOut(BaseModel):
     is_highlight: bool
     tags: str | None
     source_key: str | None
+    event_id: int | None = None
     user_edited: bool
     created_at: str
     updated_at: str
@@ -184,6 +210,13 @@ class CaseCreate(BaseModel):
     occurred_at: datetime
     tags: str | None = None
     source_key: str | None = None
+    event_id: int | None = Field(default=None, gt=0)
+    evidence_url: str | None = None
+
+    @field_validator("evidence_url")
+    @classmethod
+    def check_url(cls, v):
+        return _validate_url(v)
 
 
 class CaseUpdate(BaseModel):
@@ -209,6 +242,8 @@ class CaseOut(BaseModel):
     occurred_at: str
     tags: str | None
     source_key: str | None
+    event_id: int | None = None
+    evidence_url: str | None = None
     user_edited: bool
     created_at: str
     updated_at: str

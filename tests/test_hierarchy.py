@@ -1,7 +1,7 @@
 """Tests for Story-Task hierarchy."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from workledger.schemas import EventCreate
 from workledger.services import events
@@ -9,7 +9,7 @@ from workledger.services import events
 
 def _ev(conn, summary, key, parent_id=None):
     ev = events.create_event(conn, EventCreate(
-        event_type="manual", occurred_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        event_type="manual", occurred_at=datetime(2026, 6, 1, tzinfo=UTC),
         summary=summary, jira_key=key, source_key=f"jira:{key}",
     ))
     if parent_id:

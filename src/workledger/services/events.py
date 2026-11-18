@@ -1,17 +1,16 @@
 """Work event CRUD with source-based deduplication."""
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
-import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from ..db import DatabaseError
+from ..db import DatabaseError, write_transaction
 from ..schemas import EventCreate, EventUpdate
 
 
-def _make_source_key(data: EventCreate) -> str:
-    if data.source_key:
-        return data.source_key
+def _legacy_source_key(data: EventCreate) -> str | None:
     parts = [data.event_type]
     if data.repo:
         parts.append(data.repo)
@@ -19,45 +18,73 @@ def _make_source_key(data: EventCreate) -> str:
         parts.append(str(data.pr_number))
     if data.comment_id:
         parts.append(data.comment_id)
-    if len(parts) == 1:
-        parts.append(uuid.uuid4().hex)
-    return ":".join(parts)
+    return ":".join(parts) if len(parts) > 1 else None
+
+
+def _source_fingerprint(data: EventCreate) -> str:
+    payload = data.model_dump(mode="json", exclude={"source_key"})
+    if data.occurred_at.tzinfo is not None:
+        payload["occurred_at"] = data.occurred_at.astimezone(UTC).isoformat()
+    encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _matches_legacy_event(row: sqlite3.Row, data: EventCreate, occurred: str) -> bool:
+    fields = data.model_dump(exclude={"source_key", "occurred_at"})
+    return row["occurred_at"] == occurred and all(row[name] == value for name, value in fields.items())
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict:
     d = dict(row)
+    d.pop("source_fingerprint", None)
     for k in ("root_cause_confirmed", "verification_done", "user_edited"):
         d[k] = bool(d[k])
     return d
 
 
 def create_event(conn: sqlite3.Connection, data: EventCreate) -> dict:
-    source_key = _make_source_key(data)
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    fingerprint = _source_fingerprint(data)
+    source_key = data.source_key or f"event:{fingerprint}"
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
     occurred = data.occurred_at.strftime("%Y-%m-%d %H:%M:%S")
 
     try:
-        with conn:
+        with write_transaction(conn):
             existing = conn.execute(
                 "SELECT * FROM work_events WHERE source_key = ?", (source_key,)
             ).fetchone()
             if existing:
-                return _row_to_dict(existing)
+                result = _row_to_dict(existing)
+                stored_fingerprint = existing["source_fingerprint"]
+                if stored_fingerprint and stored_fingerprint != fingerprint:
+                    result["source_conflict"] = True
+                return result
+
+            # A replay of a matching pre-upgrade record should still return that
+            # row. A different action sharing the old coarse key can be written.
+            legacy_key = _legacy_source_key(data) if not data.source_key else None
+            if legacy_key:
+                legacy = conn.execute(
+                    "SELECT * FROM work_events WHERE source_key = ? AND source_fingerprint IS NULL",
+                    (legacy_key,),
+                ).fetchone()
+                if legacy and _matches_legacy_event(legacy, data, occurred):
+                    return _row_to_dict(legacy)
 
             conn.execute(
                 """INSERT INTO work_events
                    (event_type, occurred_at, recorded_at, repo, pr_number, comment_id,
                     jira_key, source_key, source_agent, summary, detail, evidence_url,
                     root_cause, root_cause_confirmed, verification_result, verification_done,
-                    reply_status, extra_json, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    reply_status, extra_json, created_at, updated_at, source_fingerprint)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     data.event_type, occurred, now, data.repo, data.pr_number,
                     data.comment_id, data.jira_key, source_key, data.source_agent,
                     data.summary, data.detail, data.evidence_url,
                     data.root_cause, int(data.root_cause_confirmed),
                     data.verification_result, int(data.verification_done),
-                    data.reply_status, data.extra_json, now, now,
+                    data.reply_status, data.extra_json, now, now, fingerprint,
                 ),
             )
             row = conn.execute(
@@ -65,16 +92,8 @@ def create_event(conn: sqlite3.Connection, data: EventCreate) -> dict:
             ).fetchone()
             return _row_to_dict(row)
     except sqlite3.IntegrityError as e:
-        if "UNIQUE" in str(e):
-            row = conn.execute(
-                "SELECT * FROM work_events WHERE source_key = ?", (source_key,)
-            ).fetchone()
-            if row:
-                return _row_to_dict(row)
-        raise DatabaseError(f"Invalid event data: {e}") from e
+        raise DatabaseError(f"Invalid event data: {e}", status_code=422) from e
     except sqlite3.OperationalError as e:
-        if "locked" in str(e).lower() or "busy" in str(e).lower():
-            raise DatabaseError("Database locked, retry shortly.", retryable=True) from e
         raise DatabaseError(f"Write failed: {e}") from e
 
 
@@ -84,38 +103,56 @@ def get_event(conn: sqlite3.Connection, event_id: int) -> dict | None:
 
 
 def update_event(conn: sqlite3.Connection, event_id: int, data: EventUpdate, changed_by: str = "user") -> dict | None:
-    existing = conn.execute("SELECT * FROM work_events WHERE id = ?", (event_id,)).fetchone()
-    if not existing:
-        return None
+    with write_transaction(conn):
+        existing = conn.execute("SELECT * FROM work_events WHERE id = ?", (event_id,)).fetchone()
+        if not existing:
+            return None
+        updates = {
+            field: value for field, value in data.model_dump(exclude_unset=True).items()
+            if existing[field] != value
+        }
+        if not updates:
+            return _row_to_dict(existing)
 
-    updates = data.model_dump(exclude_none=True)
-    if not updates:
-        return _row_to_dict(existing)
-
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    set_clauses = []
-    params = []
-    for field, value in updates.items():
-        if field in ("root_cause_confirmed", "verification_done"):
-            value = int(value)
-        set_clauses.append(f"{field} = ?")
-        params.append(value)
-
-    set_clauses.extend(["user_edited = 1", "updated_at = ?"])
-    params.extend([now, event_id])
-
-    with conn:
+        now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+        set_clauses = [f"{field} = ?" for field in updates]
+        set_clauses.extend(["user_edited = 1", "updated_at = ?"])
         for field, value in updates.items():
-            if field in ("root_cause_confirmed", "verification_done"):
-                value = int(value)
+            old_value = existing[field]
             conn.execute(
                 "INSERT INTO revisions (entity_type, entity_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?,?)",
-                ("work_event", event_id, field, str(existing[field]), str(value), changed_by),
+                ("work_event", event_id, field, old_value, value, changed_by),
             )
         conn.execute(
-            f"UPDATE work_events SET {', '.join(set_clauses)} WHERE id = ?", params
+            f"UPDATE work_events SET {', '.join(set_clauses)} WHERE id = ?",
+            (*updates.values(), now, event_id),
         )
-    return get_event(conn, event_id)
+        return get_event(conn, event_id)
+
+
+def split_expansion_keywords(raw: str) -> list[str]:
+    values = raw.replace("，", ",").replace("、", ",").split(",")
+    return list(dict.fromkeys(value.strip() for value in values if value.strip()))[:6]
+
+
+def _search_terms(terms: list[str]) -> tuple[str, list[str]]:
+    conditions = []
+    params = []
+    for term in terms:
+        term = term.strip()
+        if not term:
+            continue
+        if len(term) >= 3:
+            conditions.append("id IN (SELECT rowid FROM work_events_fts WHERE work_events_fts MATCH ?)")
+            params.append('"' + term.replace('"', '""') + '"')
+        else:
+            conditions.append(
+                "(summary LIKE ? ESCAPE '\\' OR detail LIKE ? ESCAPE '\\' "
+                "OR root_cause LIKE ? ESCAPE '\\')"
+            )
+            escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            params.extend([f"%{escaped}%"] * 3)
+    return " OR ".join(conditions), params
 
 
 def search_events(
@@ -128,21 +165,28 @@ def search_events(
     event_type: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    project_id: int | None = None,
+    root_cause: str | None = None,
     page: int = 1,
     page_size: int = 20,
+    keywords: list[str] | None = None,
+    raw_match: str | None = None,
 ) -> tuple[list[dict], int]:
     conditions = []
     params: list = []
 
-    if q:
-        if len(q.strip()) >= 3:
-            conditions.append("id IN (SELECT rowid FROM work_events_fts WHERE work_events_fts MATCH ?)")
-            params.append('"' + q.replace('"', '""') + '"')
-        else:
-            conditions.append("(summary LIKE ? OR detail LIKE ? OR root_cause LIKE ?)")
-            like = f"%{q}%"
-            params.extend([like, like, like])
-    if repo:
+    if raw_match:
+        conditions.append("id IN (SELECT rowid FROM work_events_fts WHERE work_events_fts MATCH ?)")
+        params.append(raw_match)
+    else:
+        terms = keywords if keywords is not None else [q] if q else []
+        term_filter, term_params = _search_terms(terms)
+        if term_filter:
+            conditions.append(f"({term_filter})")
+            params.extend(term_params)
+    if repo == "":
+        conditions.append("(repo IS NULL OR repo = '')")
+    elif repo is not None:
         conditions.append("repo = ?")
         params.append(repo)
     if pr_number is not None:
@@ -154,6 +198,14 @@ def search_events(
     if event_type:
         conditions.append("event_type = ?")
         params.append(event_type)
+    if project_id == 0:
+        conditions.append("project_id IS NULL")
+    elif project_id is not None:
+        conditions.append("project_id = ?")
+        params.append(project_id)
+    if root_cause is not None:
+        conditions.append("root_cause = ?")
+        params.append(root_cause)
     if date_from:
         conditions.append("occurred_at >= ?")
         params.append(date_from)
@@ -203,33 +255,11 @@ def search_fts(
     event_type: str | None = None,
     page: int = 1,
     page_size: int = 20,
+    keywords: list[str] | None = None,
     raw_match: str | None = None,
 ) -> tuple[list[dict], int]:
-    """Full-text search via FTS5 trigram. Falls back to LIKE for queries under 3 chars.
-    raw_match overrides query with a pre-built FTS5 expression (e.g. OR of keywords)."""
-    conditions = []
-    params: list = []
-    if raw_match:
-        conditions.append("id IN (SELECT rowid FROM work_events_fts WHERE work_events_fts MATCH ?)")
-        params.append(raw_match)
-    elif len(query.strip()) >= 3:
-        conditions.append("id IN (SELECT rowid FROM work_events_fts WHERE work_events_fts MATCH ?)")
-        params.append('"' + query.replace('"', '""') + '"')
-    else:
-        conditions.append("(summary LIKE ? OR detail LIKE ? OR root_cause LIKE ?)")
-        like = f"%{query}%"
-        params.extend([like, like, like])
-    if repo:
-        conditions.append("repo = ?")
-        params.append(repo)
-    if event_type:
-        conditions.append("event_type = ?")
-        params.append(event_type)
-    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    total = conn.execute(f"SELECT COUNT(*) AS c FROM work_events {where}", params).fetchone()["c"]
-    offset = (page - 1) * page_size
-    rows = conn.execute(
-        f"SELECT * FROM work_events {where} ORDER BY occurred_at DESC, id DESC LIMIT ? OFFSET ?",
-        params + [page_size, offset],
-    ).fetchall()
-    return [_row_to_dict(r) for r in rows], total
+    """Find a literal query or any of the supplied keywords."""
+    return search_events(
+        conn, q=query, repo=repo, event_type=event_type, page=page, page_size=page_size,
+        keywords=keywords, raw_match=raw_match,
+    )

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ value: number | string; label: string; tone?: 'brand' | 'gold' | 'rust' }>()
+defineProps<{ value: number | string; label: string; tone?: 'brand' | 'gold' | 'rust' | 'green' }>()
 </script>
 
 <template>

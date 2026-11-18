@@ -180,6 +180,14 @@ def get_pr_timeline(conn: sqlite3.Connection, repo: str, pr_number: int) -> list
     return [_row_to_dict(r) for r in rows]
 
 
+def get_children(conn: sqlite3.Connection, event_id: int) -> list[dict]:
+    rows = conn.execute(
+        "SELECT * FROM work_events WHERE parent_event_id = ? ORDER BY occurred_at ASC, id ASC",
+        (event_id,),
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
 def list_repos(conn: sqlite3.Connection) -> list[str]:
     rows = conn.execute(
         "SELECT DISTINCT repo FROM work_events WHERE repo IS NOT NULL ORDER BY repo"

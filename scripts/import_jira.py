@@ -57,39 +57,48 @@ def main():
 
     now = datetime.now(timezone.utc)
     created, skipped = 0, 0
-    for i in issues:
+    key_to_event = {}
+
+    def import_one(i):
+        nonlocal created, skipped
         key = i["key"]
         source_key = f"jira:{key}"
-        existing = conn.execute("SELECT id FROM work_events WHERE source_key = ?", (source_key,)).fetchone()
-        if existing:
-            skipped += 1
-            print(f"skip {key} (already imported as event {existing['id']})")
-            continue
-
         issuetype = (i.get("issuetype") or {}).get("name", "?")
         status = (i.get("status") or {}).get("name", "?")
         priority = (i.get("priority") or {}).get("name", "?")
-        desc = adf_to_text(i.get("description")).strip()
         url = i.get("url") or f"https://transfinder.atlassian.net/browse/{key}"
-
-        detail = f"[{issuetype} · {status} · priority {priority}]\n\n{desc}" if desc else f"[{issuetype} · {status} · priority {priority}]"
         extra = json.dumps({"issuetype": issuetype, "status": status, "priority": priority, "jira_url": url}, ensure_ascii=False)
 
-        ev = events.create_event(conn, EventCreate(
-            event_type="manual",
-            occurred_at=now,
-            jira_key=key,
-            source_key=source_key,
-            source_agent="jira-import",
-            summary=i.get("summary", key),
-            detail=detail,
-            evidence_url=url,
-            extra_json=extra,
-        ))
-        conn.execute("UPDATE work_events SET project_id = ? WHERE id = ?", (project_id, ev["id"]))
+        existing = conn.execute("SELECT id FROM work_events WHERE source_key = ?", (source_key,)).fetchone()
+        if existing:
+            eid = existing["id"]
+            skipped += 1
+            print(f"skip {key} (event {eid})")
+        else:
+            desc = adf_to_text(i.get("description")).strip()
+            detail = f"[{issuetype} · {status} · priority {priority}]\n\n{desc}" if desc else f"[{issuetype} · {status} · priority {priority}]"
+            ev = events.create_event(conn, EventCreate(
+                event_type="manual", occurred_at=now, jira_key=key, source_key=source_key,
+                source_agent="jira-import", summary=i.get("summary", key), detail=detail,
+                evidence_url=url, extra_json=extra,
+            ))
+            eid = ev["id"]
+            created += 1
+            print(f"import {key} [{issuetype}/{status}] -> event {eid}")
+
+        conn.execute("UPDATE work_events SET project_id = ? WHERE id = ?", (project_id, eid))
+        parent_key = (i.get("parent") or {}).get("key")
+        if parent_key and parent_key in key_to_event:
+            conn.execute("UPDATE work_events SET parent_event_id = ? WHERE id = ?", (key_to_event[parent_key], eid))
+            print(f"   link {key} -> parent {parent_key} (event {key_to_event[parent_key]})")
         conn.commit()
-        created += 1
-        print(f"import {key} [{issuetype}/{status}] -> event {ev['id']}")
+        key_to_event[key] = eid
+
+    # Import parents before children so parent_event_id can be resolved.
+    parent_keys = {(i.get("parent") or {}).get("key") for i in issues}
+    ordered = [i for i in issues if i["key"] in parent_keys] + [i for i in issues if i["key"] not in parent_keys]
+    for i in ordered:
+        import_one(i)
 
     print(f"\nDone: {created} created, {skipped} skipped (dedup). Project '{args.project_key}' id={project_id}.")
 

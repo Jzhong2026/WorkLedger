@@ -12,6 +12,7 @@
         {% endfor %}
     </select>
     <input type="number" name="pr_number" value="{{ pr_number or '' }}" placeholder="PR #">
+    <input type="text" name="jira_key" value="{{ jira_key }}" placeholder="Jira key (RW-…)">
     <select name="event_type">
         <option value="">All types</option>
         {% for et in ['pr_created','review_finding','comment_analysis','fix','verification','reply_drafted','reply_published','manual'] %}
@@ -31,13 +32,14 @@
 <div class="card">
     <div class="card-header">
         <span class="badge badge-{{ ev.event_type }}">{{ ev.event_type }}</span>
+        {% if ev.jira_key %}<span class="badge badge-type">{{ ev.jira_key }}</span>{% endif %}
         <a href="/event/{{ ev.id }}"><strong>{{ ev.summary or '(no summary)' }}</strong></a>
     </div>
     <div class="card-meta">
         <span>{{ ev.occurred_at[:10] }}</span>
         {% if ev.repo %}<a href="/pr?repo={{ ev.repo }}&pr_number={{ ev.pr_number }}">{{ ev.repo }}#{{ ev.pr_number }}</a>{% endif %}
-        {% if ev.jira_key %}<span>{{ ev.jira_key }}</span>{% endif %}
         {% if ev.evidence_url %}<a href="{{ ev.evidence_url }}" target="_blank" rel="noopener">Evidence</a>{% endif %}
+        {% if ev.snapshot_status == 'captured' %}<span class="badge badge-ok">snapshot</span>{% endif %}
     </div>
 </div>
 {% endfor %}
@@ -45,15 +47,21 @@
 
 {% if pages > 1 %}
 <div class="pagination">
-    {% if page > 1 %}<a href="/search?q={{ q }}&repo={{ repo }}&page={{ page - 1 }}">&laquo; Prev</a>{% endif %}
+    {% if page > 1 %}<a href="/search?{{ filter_qs }}&page={{ page - 1 }}">&laquo; Prev</a>{% endif %}
     <span>Page {{ page }} / {{ pages }}</span>
-    {% if page < pages %}<a href="/search?q={{ q }}&repo={{ repo }}&page={{ page + 1 }}">Next &raquo;</a>{% endif %}
+    {% if page < pages %}<a href="/search?{{ filter_qs }}&page={{ page + 1 }}">Next &raquo;</a>{% endif %}
 </div>
 {% endif %}
 
-{% elif q or repo or pr_number or event_type or date_from or date_to %}
-<p class="empty">No matching records.</p>
+{% elif q or repo or pr_number or jira_key or event_type or date_from or date_to %}
+<div class="empty">
+    <img class="empty-illustration" src="/static/img/empty-ledger.png" alt="Empty ledger">
+    No matching records. Try broader keywords or fewer filters.
+</div>
 {% else %}
-<p class="empty">Enter keywords or filters to search.</p>
+<div class="empty">
+    <img class="empty-illustration" src="/static/img/empty-ledger.png" alt="Empty ledger">
+    Enter keywords or filters to search your work history.
+</div>
 {% endif %}
 {% endblock %}

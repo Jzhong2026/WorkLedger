@@ -62,6 +62,11 @@ def get_event(event_id: int):
     return result
 
 
+@router.get("/events/{event_id}/children")
+def get_event_children(event_id: int):
+    return events.get_children(_conn(), event_id)
+
+
 @router.patch("/events/{event_id}")
 def update_event(event_id: int, data: EventUpdate):
     result = events.update_event(_conn(), event_id, data)

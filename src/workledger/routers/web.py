@@ -40,22 +40,28 @@ def search_page(
     q: str | None = None,
     repo: str | None = None,
     pr_number: int | None = None,
+    jira_key: str | None = None,
     event_type: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     page: int = 1,
 ):
+    from urllib.parse import urlencode
     items, total = events.search_events(
-        _conn(), q=q, repo=repo, pr_number=pr_number, event_type=event_type,
+        _conn(), q=q, repo=repo, pr_number=pr_number, jira_key=jira_key, event_type=event_type,
         date_from=date_from, date_to=date_to, page=page, page_size=20,
     )
     repos = events.list_repos(_conn())
     pages = (total + 19) // 20 if total else 0
+    filters = {k: v for k, v in {
+        "q": q, "repo": repo, "pr_number": pr_number, "jira_key": jira_key,
+        "event_type": event_type, "date_from": date_from, "date_to": date_to,
+    }.items() if v}
     return templates.TemplateResponse(request, "search.html", {
         "items": items, "total": total, "page": page, "pages": pages,
-        "q": q or "", "repo": repo or "", "pr_number": pr_number,
+        "q": q or "", "repo": repo or "", "pr_number": pr_number, "jira_key": jira_key or "",
         "event_type": event_type or "", "date_from": date_from or "",
-        "date_to": date_to or "", "repos": repos,
+        "date_to": date_to or "", "repos": repos, "filter_qs": urlencode(filters),
     })
 
 
@@ -69,8 +75,13 @@ def pr_page(request: Request, repo: str, pr_number: int):
 
 @router.get("/event/{event_id}")
 def event_detail(request: Request, event_id: int):
-    ev = events.get_event(_conn(), event_id)
-    return templates.TemplateResponse(request, "event_detail.html", {"event": ev})
+    conn = _conn()
+    ev = events.get_event(conn, event_id)
+    parent = events.get_event(conn, ev["parent_event_id"]) if ev and ev.get("parent_event_id") else None
+    children = events.get_children(conn, event_id) if ev else []
+    return templates.TemplateResponse(request, "event_detail.html", {
+        "event": ev, "parent": parent, "children": children,
+    })
 
 
 @router.get("/retrospective")
@@ -97,7 +108,7 @@ def retrospective_page(request: Request, period: str = "year"):
 def todos_page(request: Request, status: str | None = None):
     items, total = todos.list_todos(_conn(), status=status)
     return templates.TemplateResponse(request, "todos.html", {
-        "todos": items, "total": total, "status_filter": status or "",
+        "todos": items, "total": total, "status_filter": status or "", "today": date.today().isoformat(),
     })
 
 

@@ -1309,8 +1309,11 @@ def seeded(conn, monkeypatch):
                                                     "author": "Other", "author_uuid": "{other}",
                                                     "reviewers": [], "jira_keys": []}),
     ))
-    todos.create_todo(conn, TodoCreate(title="Overdue WL", due_date=(today - timedelta(days=1)).isoformat(), project_id=wl["id"]))
-    todos.create_todo(conn, TodoCreate(title="RW open", project_id=rw["id"]))
+    overdue = todos.create_todo(conn, TodoCreate(title="Overdue WL", due_date=(today - timedelta(days=1)).isoformat()))
+    conn.execute("UPDATE todos SET project_id=? WHERE id=?", (wl["id"], overdue["id"]))
+    rw_event = events.create_event(conn, EventCreate(event_type="manual", occurred_at=datetime.now(UTC), summary="RW context"))
+    conn.execute("UPDATE work_events SET project_id=? WHERE id=?", (rw["id"], rw_event["id"]))
+    todos.create_todo(conn, TodoCreate(title="RW open", event_id=rw_event["id"]))
     work_items.create_work_item(conn, WorkItemCreate(title="Track RW-1", jira_key="RW-1", project_id=rw["id"]))
     sync_state.record_success(conn, "bitbucket:transfinderorg/core", {"my_uuid": "{jason-uuid}"})
     return rw
@@ -1466,17 +1469,21 @@ def project_summary(conn: sqlite3.Connection, key: str, window: str = "7d") -> d
 
     overdue = [dict(r) for r in conn.execute(
         "SELECT t.id, t.title, t.due_date, t.status, p.key AS project_key FROM todos t "
-        "LEFT JOIN projects p ON p.id = t.project_id "
+        "LEFT JOIN work_events e ON t.event_id = e.id "
+        "LEFT JOIN projects p ON p.id = COALESCE(t.project_id, e.project_id) "
         "WHERE t.status != 'done' AND t.due_date IS NOT NULL AND t.due_date < ? ORDER BY t.due_date",
         (today_iso,),
     )]
     project_open = [dict(r) for r in conn.execute(
-        "SELECT id, title, status, due_date, next_followup FROM todos "
-        "WHERE project_id=? AND status != 'done' ORDER BY due_date",
+        "SELECT t.id, t.title, t.status, t.due_date, t.next_followup FROM todos t "
+        "LEFT JOIN work_events e ON t.event_id = e.id "
+        "WHERE COALESCE(t.project_id, e.project_id) = ? AND t.status != 'done' ORDER BY t.due_date",
         (project["id"],),
     )]
     due_today = [dict(r) for r in conn.execute(
-        "SELECT id, title, status, due_date FROM todos WHERE project_id=? AND status != 'done' AND due_date=?",
+        "SELECT t.id, t.title, t.status, t.due_date FROM todos t "
+        "LEFT JOIN work_events e ON t.event_id = e.id "
+        "WHERE COALESCE(t.project_id, e.project_id) = ? AND t.status != 'done' AND t.due_date=?",
         (project["id"], today_iso),
     )]
     items = [dict(r) for r in conn.execute(

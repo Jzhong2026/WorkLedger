@@ -21,7 +21,8 @@ WorkLedger（FastAPI + SQLite + Vue3 SPA，端口 8600）目前只有 2026-11-18
 
 - Knowledge Vault / Confluence 关联。
 - Jira/Bitbucket webhook（本机 127.0.0.1 无公网入口；polling 覆盖需求）。
-- 前端 UI 改动（汇总走 API/MCP；同步状态条可作后续任务）。
+- 前端 UI 改动。**下一期跟进（用户已提出）**：前端加一条同步状态；
+  insights 按来源（人工/Jira/Bitbucket）分开统计。
 
 ## 3. 已确认决策
 
@@ -31,14 +32,17 @@ WorkLedger（FastAPI + SQLite + Vue3 SPA，端口 8600）目前只有 2026-11-18
 | Jira 范围 | `project in (RW,AIP) AND key != AIP-96 AND (assignee = currentUser() OR updated >= -30d OR key in (已导入 keys))` —— 项目汇总口径，含他人近期活跃票 |
 | PR 范围 | `(author.uuid = Jason OR reviewers.uuid = Jason) AND updated_on >= now-30d`，OPEN/MERGED/DECLINED 全状态 |
 | 凭据 | 将 Qoder settings.json 中现有 `ATLASSIAN_USER_EMAIL`/`ATLASSIAN_API_TOKEN` 复制到 WorkLedger `.env`（已 gitignore，用户已批准）。Jira 走 twg CLI，无需额外凭据 |
-| PR 事件形态 | **不用新 event_type**（enum 是 CHECK 闭集）。每 PR 一条 `pr_created` 锚点事件 + 状态迁移时追加幂等 `manual` 迁移事件，保住多条事件 timeline |
+| PR 事件形态 | **不用新 event_type**（enum 是 CHECK 闭集）。每 PR 一条 `pr_created` 锚点事件，状态变化只更新锚点 `extra_json.state`；**不追加迁移事件**（现有 Jira 快照已是 manual，追加会污染周报/导出/insights） |
 | Backlog 票 | **不建 work item**（`waiting` 语义是等待/阻塞，且 stage 是 SQL CHECK 闭集，加值需重建表）。票在 summary tickets 中可见；转 In Progress 后下次同步自动建 item |
+| 历史 Done 票 | **不建 work item**（避免刷屏 briefing）；仅当本次同步观察到 非done→done 迁移（刚完成）时补建 done item |
 | 他人票 | 只进 work_events 快照供汇总计数，**不建 work item**（briefing 保持 Jason 的工作） |
-| MCP 交付 | 准备好 `examples/mcp-config.json`（stdio），同时注册进 Qoder MCP 设置 |
+| MCP 交付 | Jason 日常走 HTTP 127.0.0.1:8600；stdio MCP 给本机 IDE 用，准备好 `examples/mcp-config.json`（.venv 解释器绝对路径），不注册进 Qoder |
 
 已验证的可行性（2026-11-26 实测）：
 - twg CLI（v1.3.3，transfinder 站点）查询成功；线上已出现快照外的新票 RW-82353（In Progress）。
+  返回的 status 对象**含 statusCategory（new/indeterminate/done），已实测确认**。
   注意：twg 提示低于最低支持版本 1.4.4，建议用户自行 `twg upgrade`（不在本任务内执行）。
+- 账本内 6 张已完成票的 status 为中文 **「已完成」**（已实测），回退列表必须包含。
 - Bitbucket REST + 现有 token：三仓库均 200；Jason uuid `{d78122ae-7322-4d1a-8dcc-77e9c3a5059e}`，
   `author.uuid OR reviewers.uuid` 过滤有效。
 - 旧记忆中"Bitbucket 停用"指 `transfinder`/`jasonzhong` workspace，与本次 `transfinderorg` 无关。
@@ -51,7 +55,7 @@ POST /api/sync/* ──────────┤→ services/sync.py ──→
                            │        │            httpx REST (Bitbucket)
                            │        ├→ services/jira_import.py（自 scripts/import_jira.py 移入）
                            │        │     └→ work_events 票据快照 + 自动 work_items
-                           │        ├→ work_events PR 锚点/迁移事件
+                           │        ├→ work_events PR 锚点（state 存 extra_json）
                            │        └→ sync_state 表（last_success/last_error/detail）
 GET /api/summary/project ──→ services/summary.py（读 work_events/work_items/todos/sync_state）
 GET /api/health ───────────→ db 检查 + schema_version + 各源新鲜度
@@ -73,8 +77,10 @@ CREATE TABLE sync_state (
 不新增实体表。票据沿用现有 `work_events` 快照模式（`source_key='jira:KEY'`，
 `source_agent='jira-import'` 保持不变以兼容现有数据与 importer 守卫）。
 **jira_import 增强**：extra_json 新增 `status_category`（twg 返回的 statusCategory.key：
-new/indeterminate/done），供 summary 判定 open/done 与 stage 映射；
-旧数据无此字段时按 status 名回退（Done/Closed/Resolved/Cancelled → done，其余 → open）。
+new/indeterminate/done）与 `assignee_account_id`（assignee.accountId），
+供 summary 判定 open/done、stage 映射与归属判断；
+旧数据无 status_category 时按 status 名回退：
+Done/Closed/Resolved/Cancelled/**已完成**/已关闭/已解决/已取消 → done，其余 → open。
 
 **PR 事件规则：**
 - 锚点：`event_type='pr_created'`，`repo='transfinderorg/core'`（含 workspace 前缀），
@@ -84,16 +90,14 @@ new/indeterminate/done），供 summary 判定 open/done 与 stage 映射；
   `extra_json`：`{bitbucket_updated, state, author, author_uuid, reviewers:[{name,uuid,approved}],
   url, jira_keys, source_branch, target_branch}`。
 - 更新：`bitbucket_updated` 单调递增守卫（旧数据跳过）；summary/detail 尊重人工编辑字段
-  （复用 importer 的 `_edited_fields` 模式）；extra_json 总是刷新。
-- 状态迁移：观察到 state 变化时追加 `event_type='manual'` 事件，
-  `source_key='bitbucket:{ws}/{repo}:pr:{id}:state:{STATE}'`（幂等），
-  `occurred_at=`迁移时的 `updated_on`，summary 如 "PR #6775 MERGED: …"。
-  → timeline（按 repo+pr_number 全事件排序）与周报（按周窗口）自然受益。
+  （复用 importer 的 `_edited_fields` 模式）；extra_json 总是刷新，**状态变化只改锚点 extra_json.state**。
+- **不追加任何迁移事件**：现有 8 条 Jira 快照已是 `manual`，追加会污染周报/导出/insights。
+  合并状态一律读锚点 `extra_json.state`；近期合并动态由 summary 按 `bitbucket_updated` 窗口呈现。
 - 标题提取 jira key：`\b(?:RW|AIP)-\d+\b`（解析结构化票号，非用户意图识别）。
 
 ## 6. Jira 同步（services/sync.py::sync_jira）
 
-1. 从 DB 取已导入 keys（`work_events.jira_key` 非空、属于同步项目，上限 100 个）。
+1. 从 DB 取已导入 keys（`work_events.jira_key` 非空、属于同步项目，**不设数量上限**，保证旧票不掉出同步）。
 2. 组装 JQL（§3），调 twg：
    `twg jira workitem query --site transfinder --jql … --fields key,summary,status,issuetype,priority,assignee,parent,created,updated,description --limit 200 --output json`。
    twg 路径来自 settings（.env 配全路径）；从命令输出解析 `output_files.stdout` 路径读 JSON。
@@ -102,15 +106,17 @@ new/indeterminate/done），供 summary 判定 open/done 与 stage 映射；
    `src/workledger/services/jira_import.py`；脚本保留为薄 CLI 壳；测试导入路径同步更新），
    `base_url="https://transfinder.atlassian.net"` 保证 browse 链接。
    AIP 项目由 import_issues 自动创建。
-4. **自动 work item**（仅当 `assignee.accountId == Jason 的 accountId`）：
+4. **自动 work item**（仅当 `assignee.accountId == Jason 的 accountId`，**用 accountId 判断，不用人名**）：
    - Jason accountId 首次同步时用一条轻量查询 `assignee = currentUser() AND project in (RW,AIP)`
-     （limit 1）取得并缓存于 `sync_state('jira').detail_json`；取不到时回退 displayName=="JasonZhong"。
+     （limit 1）取得并缓存于 `sync_state('jira').detail_json`；取不到时本轮跳过自动建 item 并记录，不猜。
    - 该 jira_key 无 work_items 行时创建：`WorkItemCreate(title=summary, jira_key, project_id,
      source_event_id=快照事件id, source_key='jira-item:KEY', actor='jira-sync', stage=映射)`。
-   - stage 映射（按 statusCategory + status 名）：`done→done`；
+   - 创建范围（按 statusCategory + status 名）：
      `indeterminate→active`（status 名含 Acceptance/Verification/Review 时→`verification`）；
-     `new（Backlog/To Do）→不建`。
-   - 已存在的 item 绝不覆盖（创建前按 jira_key 查存在性，规避 source_key fingerprint 409）。
+     `done`→**仅当本次同步观察到 非done→done 迁移**（对比上一快照的 status_category/status）时建 done item，
+     历史 Done 票不建（避免刷屏 briefing）；`new（Backlog/To Do）→不建`。
+   - 已存在的 item 绝不覆盖、**绝不删除**：创建前按 jira_key 查存在性（规避 source_key fingerprint 409）；
+     **负责人改走后已有 item 保留**。
 5. 写 sync_state：计数（created/updated/unchanged/items_created）、last_success_at。
 
 ## 7. Bitbucket 同步（services/sync.py::sync_bitbucket）
@@ -184,9 +190,10 @@ DB 检查失败 → 503 `{"status":"error",…}`。
 
 - 新增 4 tools（共 42）：`sync_jira()`、`sync_bitbucket()`、`get_project_summary(key, window="7d")`、
   `get_sync_status()`。复用 service 函数，JSON 字符串输出，沿用 `_err` 错误模式。
-- `examples/mcp-config.json`：保持 stdio 模板（`python -m workledger.mcp_server` + cwd +
-  `WORKLEDGER_DATA_DIR`）；实现时验证 `python` 解释器确实装有 workledger，否则改为绝对路径。
-- 用 qoder-settings manage_app_mcp 将同一配置注册进 Qoder（用户已批准设计）。
+- `examples/mcp-config.json`：stdio 模板给本机 IDE 用，解释器用
+  `D:/AI/Projects/WorkLedger/.venv/Scripts/python.exe`（已验证：该 venv 装有 workledger，
+  运行中的服务也用此解释器）+ `-m workledger.mcp_server` + cwd + `WORKLEDGER_DATA_DIR`。
+- Jason 日常走 HTTP 127.0.0.1:8600，不做 Qoder MCP 注册。
 - SQLite 已是 WAL，MCP 进程与 Web 进程并发读写安全。
 
 ## 11. 按周导出
@@ -214,21 +221,25 @@ settings 新增（均有默认值）：`atlassian_user_email`、`atlassian_api_t
 单测（fake twg runner 注入 + httpx MockTransport，不打真实网络）：
 - migration 010 在现有 schema 上干净应用。
 - jira_import 模块迁移后现有测试全绿（更新导入路径）。
-- sync_jira：JQL 组装（含 exclude/已导入 keys/30d）、事件创建、仅 Jason 名下建 item、
-  stage 映射（含 Acceptance→verification、Backlog 不建）、重复同步幂等、sync_state 记录、截断警告。
-- sync_bitbucket：锚点创建、状态迁移事件幂等、重跑不重复、人工编辑 summary 保留、
-  bitbucket_updated 单调守卫、needs_review 判定。
-- summary：counts/open/changed 口径、status_category 旧数据回退、window 边界、未知 key 404、
-  stale 判定、overdue_global。
+- sync_jira：JQL 组装（含 exclude/全部已导入 keys/30d）、事件创建、仅 Jason accountId 建 item、
+  创建范围（In Progress/Acceptance 建、历史 Done 不建、非done→done 迁移建 done item、Backlog 不建）、
+  负责人改走不删已有 item、重复同步幂等、sync_state 记录、截断警告。
+- sync_bitbucket：锚点创建、状态变化只更新 extra_json.state（不新增事件）、重跑不重复、
+  人工编辑 summary 保留、bitbucket_updated 单调守卫、needs_review 判定。
+- summary：counts/open/changed 口径、status_category 旧数据回退（含「已完成」）、window 边界、
+  未知 key 404、stale 判定、overdue_global。
 - health/sync 端点（TestClient）；export week 区间。
 
  live 冒烟（实现完成后）：
 - 备份 DB（`workledger backup`）→ 重启服务（旧进程 taskkill）→ migration 自动应用。
-- 真实同步一次：断言 RW-82353 进账本、AIP-96 不在、PR 锚点存在、work item 生成、
+- 真实同步一次：断言 RW-82353 进账本、AIP-96 不在、PR 锚点存在、work item 只按创建范围生成
+  （6 张历史「已完成」票不建 item）、
   `/api/summary/project?key=RW&window=7d` 与 `/api/health` 返回正确、周报/briefing 非空。
 
 ## 14. 交付顺序
 
+0. **基线提交**：先把未提交的 work_items/learning/周报代码单独 commit（全套 126 测试已验证绿，
+   `.env` 与 `data/` 不提交），再开始本次实现，不混在一起。
 1. migration 010 + settings + .env 凭据 → 2. jira_import 模块迁移 → 3. sync_jira + 自动 item →
-4. sync_bitbucket → 5. 调度/触发/health/sync 端点 → 6. summary → 7. MCP tools + 配置 + Qoder 注册 →
+4. sync_bitbucket → 5. 调度/触发/health/sync 端点 → 6. summary → 7. MCP tools + examples 配置 →
 8. export week → 9. live 冒烟 + 文档（README/SKILL.md 同步说明）→ 10. commit + push（main）。

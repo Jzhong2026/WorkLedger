@@ -107,3 +107,12 @@ def test_user_fetch_failure_records_error_on_all_sources(conn, bb_settings):
     result = sync_bitbucket.sync_bitbucket(conn, client=client)
     assert result["ok"] is False
     assert "identity" in sync_state.get_states(conn)["bitbucket:transfinderorg/core"]["last_error"]
+
+
+def test_user_non_json_response_records_error(conn, bb_settings):
+    def handler(request):
+        return httpx.Response(200, text="<html>login</html>")
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://api.bitbucket.org/2.0")
+    result = sync_bitbucket.sync_bitbucket(conn, client=client)
+    assert result["ok"] is False
+    assert "identity" in sync_state.get_states(conn)["bitbucket:transfinderorg/core"]["last_error"]

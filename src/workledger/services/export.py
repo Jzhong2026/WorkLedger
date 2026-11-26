@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 from typing import Literal
 
 from ..config import settings
 from . import events, retrospectives
 
-Period = Literal["month", "quarter", "year", "all"]
+Period = Literal["week", "month", "quarter", "year", "all"]
 _PAGE_SIZE = 100
 # Keep the model prompt usable by the CLI's Windows launcher.
 _NARRATIVE_CHARS = 6_000
@@ -88,7 +88,9 @@ _SECTIONS = (
 
 def period_range(period: str, *, today: date | None = None) -> tuple[str, str]:
     today = today or date.today()
-    if period == "month":
+    if period == "week":
+        start = today - timedelta(days=today.weekday())
+    elif period == "month":
         start = today.replace(day=1)
     elif period == "quarter":
         month = ((today.month - 1) // 3) * 3 + 1
@@ -98,7 +100,7 @@ def period_range(period: str, *, today: date | None = None) -> tuple[str, str]:
     elif period == "all":
         start = date(1970, 1, 1)
     else:
-        raise ValueError("Period must be month, quarter, year, or all.")
+        raise ValueError("Period must be week, month, quarter, year, or all.")
     return start.isoformat(), today.isoformat()
 
 

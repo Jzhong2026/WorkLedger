@@ -166,3 +166,13 @@ class TestExport:
         ))
         md = export.export_markdown(conn, "month")
         assert "Old event" not in md
+
+
+def test_week_period_runs_monday_to_today():
+    from datetime import date
+
+    from workledger.services.export import period_range
+    wednesday = date(2026, 11, 25)
+    assert period_range("week", today=wednesday) == ("2026-11-23", "2026-11-25")
+    monday = date(2026, 11, 23)
+    assert period_range("week", today=monday) == ("2026-11-23", "2026-11-23")

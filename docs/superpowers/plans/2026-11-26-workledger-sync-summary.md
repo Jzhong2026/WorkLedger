@@ -423,12 +423,15 @@ def _issue(key, status="In Progress", category="indeterminate", assignee="acc-ja
 
 
 def _runner(tmp_path, issues):
-    payload = tmp_path / "twg.json"
-    payload.write_text(json.dumps({"data": {"issues": issues}}), encoding="utf-8")
     calls = []
 
     def runner(args):
         calls.append(args)
+        limit = args[args.index("--limit") + 1]
+        # 模拟 twg 服务端过滤：currentUser() 探测（--limit 1）只返回 Jason 名下的票。
+        shown = [i for i in issues if (i.get("assignee") or {}).get("accountId") == "acc-jason"] if limit == "1" else issues
+        payload = tmp_path / f"twg-{len(calls)}.json"
+        payload.write_text(json.dumps({"data": {"issues": shown}}), encoding="utf-8")
         return f'output_files:\n  stdout: "{payload}"\n'
 
     return runner, calls
@@ -678,7 +681,7 @@ def sync_jira(conn: sqlite3.Connection, *, runner: Callable[[list[str]], str] | 
         return {"source": "jira", "ok": False, "error": str(exc)}
 ```
 
-注意：`_my_account_id` 的探测查询复用同一 runner；测试里 fake runner 对探测返回完整列表，取第一个 issue 的 accountId。`previous` 快照必须在 `import_issues` 之前采集。
+注意：fake runner 模拟 twg 服务端过滤——`--limit 1` 的 currentUser() 探测只返回 acc-jason 名下的票，主查询返回完整列表。`previous` 快照必须在 `import_issues` 之前采集。
 
 - [ ] **Step 4: 跑测试确认通过**
 

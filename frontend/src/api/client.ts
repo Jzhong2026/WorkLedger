@@ -52,12 +52,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return res.json() as Promise<T>
 }
 
-const get = <T>(p: string) => request<T>('GET', p)
-const post = <T>(p: string, b?: unknown) => request<T>('POST', p, b)
-const patch = <T>(p: string, b: unknown) => request<T>('PATCH', p, b)
+export const get = <T>(p: string) => request<T>('GET', p)
+export const post = <T>(p: string, b?: unknown) => request<T>('POST', p, b)
+export const patch = <T>(p: string, b: unknown) => request<T>('PATCH', p, b)
 const del = <T>(p: string) => request<T>('DELETE', p)
 
-function qs(params: Record<string, unknown>): string {
+export function qs(params: Record<string, unknown>): string {
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
     if (v !== null && v !== undefined && (v !== '' || k === 'repo')) sp.set(k, String(v))

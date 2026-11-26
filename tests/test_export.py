@@ -1,10 +1,12 @@
 """Tests for retrospective Markdown export."""
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
+from workledger.learning_models import LessonCreate
 from workledger.schemas import AccomplishmentCreate, CaseCreate, EventCreate
-from workledger.services import events, export, retrospectives
+from workledger.services import events, export, learning, retrospectives, work_items
+from workledger.work_item_models import WorkItemCreate
 
 
 def _seed(conn):
@@ -23,6 +25,94 @@ def _seed(conn):
         event_id=source["id"], evidence_url="https://github.com/org/repo/issues/7",
     ))
     return source
+
+
+def _utc_for_local_time(value: str) -> str:
+    return datetime.fromisoformat(value).astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def test_lessons_and_use_history_are_filtered_by_local_periods(conn):
+    source_event = events.create_event(conn, EventCreate(
+        event_type="verification", occurred_at=datetime(2025, 10, 4, tzinfo=UTC),
+        summary="Verified review evidence", evidence_url="https://example.test/source-pr",
+    ))
+    source_item = work_items.create_work_item(conn, WorkItemCreate(
+        title="Source work", source_event_id=source_event["id"],
+    ))
+    target = work_items.create_work_item(conn, WorkItemCreate(title="Applied work"))
+    seeds = [
+        ("Monthly skill", "skill", "2026-05-01T00:05:00", "confirmed"),
+        ("Quarterly process", "process", "2026-04-01T00:05:00", "confirmed"),
+        ("Annual skill", "skill", "2026-01-01T00:05:00", "confirmed"),
+        ("Older process", "process", "2025-10-04T12:30:00", "confirmed"),
+        ("Draft only", "skill", "2026-05-05T12:30:00", "candidate"),
+        ("Declined process", "process", "2026-05-05T12:30:00", "declined"),
+    ]
+    lesson_ids = {}
+    for title, kind, stamp, status in seeds:
+        lesson = learning.create_lesson(conn, LessonCreate(
+            title=title, kind=kind, trigger="Input did not match", first_step="Verify the source",
+            source_work_item_id=source_item["id"], source_event_id=source_event["id"],
+            evidence_url="https://example.test/direct-proof",
+        ))
+        lesson_ids[title] = lesson["id"]
+        if status != "candidate":
+            learning.review_lesson(conn, lesson["id"], status)
+        conn.execute("UPDATE lessons SET reviewed_at = ? WHERE id = ?", (_utc_for_local_time(stamp), lesson["id"]))
+    conn.commit()
+
+    stamped_outcomes = [
+        ("applied", "2026-01-01T00:10:00", "Started in January"),
+        ("did_not_help", "2026-04-01T00:10:00", "Checked a second case"),
+        ("helped", "2026-05-01T00:10:00", "Verified the result in May"),
+    ]
+    for outcome, stamp, detail in stamped_outcomes:
+        learning.record_lesson_use(
+            conn, lesson_ids["Older process"], work_item_id=target["id"], outcome=outcome, detail=detail,
+        )
+        conn.execute("UPDATE lesson_use_history SET recorded_at = ? WHERE id = last_insert_rowid()",
+                     (_utc_for_local_time(stamp),))
+    conn.commit()
+
+    today = date(2026, 5, 6)
+    expected = [
+        ("month", ["Monthly skill"], ["helped"]),
+        ("quarter", ["Monthly skill", "Quarterly process"], ["helped", "did_not_help"]),
+        ("year", ["Monthly skill", "Quarterly process", "Annual skill"], ["helped", "did_not_help", "applied"]),
+        ("all", ["Monthly skill", "Quarterly process", "Annual skill", "Older process"],
+         ["helped", "did_not_help", "applied"]),
+    ]
+    for period, lessons, outcomes in expected:
+        page = export.retrospective_page(conn, period, today=today)
+        assert [lesson["title"] for lesson in page["lessons"]] == lessons
+        assert [entry["outcome"] for entry in page["lesson_uses"]] == outcomes
+        assert page["totals"]["lessons"] == len(lessons)
+        assert page["totals"]["lesson_uses"] == len(outcomes)
+
+    month = export.export_markdown(conn, "month", today=today)
+    assert "## Confirmed Skills & Process Lessons (1)" in month
+    assert "## Lesson Applications & Outcomes (1)" in month
+    assert "Verified the result in May" in month
+    assert "Checked a second case" not in month
+    assert "Draft only" not in month
+    assert "Declined process" not in month
+    assert f"/work-items/{target['id']}" in month
+    assert f"/event/{source_event['id']}" in month
+    assert "https://example.test/source-pr" in month
+    assert "https://example.test/direct-proof" in month
+
+    bounded, coverage = export.narrative_input(conn, "month", today=today)
+    assert "Verified the result in May" in bounded
+    assert coverage["included"]["lessons"] == coverage["included"]["lesson_uses"] == 1
+
+
+def test_empty_learning_sections_do_not_reduce_small_model_input_budget(conn):
+    _seed(conn)
+    bounded, coverage = export.narrative_input(conn, "all", max_chars=460)
+    assert "Accomplishments" in bounded
+    assert "Confirmed Skills & Process Lessons" not in bounded
+    assert "Lesson Applications & Outcomes" not in bounded
+    assert coverage["totals"]["lessons"] == coverage["totals"]["lesson_uses"] == 0
 
 
 class TestExport:

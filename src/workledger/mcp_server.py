@@ -9,10 +9,17 @@ from mcp.server.mcpserver import MCPServer
 
 from .config import settings
 from .db import DatabaseError, get_connection, init_db
+from .learning_models import LessonCreate, LessonUseCreate
 from .schemas import EventCreate, EventUpdate, TodoCreate, TodoUpdate
 from .services import events, retrospectives, todos
+from .work_item_models import HandoffCreate, WorkItemCreate
 
-mcp = MCPServer("WorkLedger", instructions="Record, search, and follow up on work events. All writes are deduplicated by source_key.")
+mcp = MCPServer("WorkLedger", instructions=(
+    "Start by calling get_work_context with the item ID or project/Jira key. "
+    "Record a meaningful checkpoint with record_work_handoff, its observed version, "
+    "your agent name and a stable source_key. Read context again after a version conflict. "
+    "Only record verified results when evidence supports them. Propose lessons for human review."
+))
 
 
 def _conn():
@@ -25,7 +32,7 @@ _TOOL_ERRORS = (DatabaseError, sqlite3.Error, ValueError, OSError)
 
 def _err(e: Exception) -> str:
     if isinstance(e, DatabaseError):
-        return json.dumps({"error": str(e), "retryable": e.retryable})
+        return json.dumps({"error": str(e), "retryable": e.retryable, "status": e.status_code})
     return json.dumps({"error": str(e)})
 
 
@@ -530,6 +537,96 @@ def snapshot_evidence(event_id: int) -> str:
     try:
         from .services import evidence
         return json.dumps(evidence.capture_snapshot(_conn(), event_id), ensure_ascii=False)
+    except _TOOL_ERRORS as e:
+        return _err(e)
+
+
+@mcp.tool()
+def create_work_item(data: WorkItemCreate) -> str:
+    """Start tracking work, optionally using a historical source event. Supply actor and stable source_key."""
+    from .services import work_items
+    try:
+        return json.dumps(work_items.create_work_item(_conn(), data), ensure_ascii=False)
+    except _TOOL_ERRORS as e:
+        return _err(e)
+
+
+@mcp.tool()
+def get_work_context(
+    item_id: int | None = None, project_id: int | None = None, jira_key: str | None = None,
+    page: int = 1, open_only: bool = False,
+) -> str:
+    """Resume by item ID or discover items by project/Jira. An ID returns evidence, handoffs, todos and lessons."""
+    from .services import work_items
+    try:
+        conn = _conn()
+        if item_id is not None:
+            context = work_items.get_work_item_context(conn, item_id)
+            if context is None:
+                raise DatabaseError(f"Work item {item_id} not found.", status_code=404)
+            return json.dumps(context, ensure_ascii=False)
+        if page < 1:
+            raise ValueError("Page must be positive.")
+        items, total = work_items.list_work_items(
+            conn, project_id=project_id, jira_key=jira_key, page=page, page_size=20, open_only=open_only,
+        )
+        if jira_key and total == 1 and items:
+            return json.dumps(work_items.get_work_item_context(conn, items[0]["id"]), ensure_ascii=False)
+        result = {"items": items, "total": total, "page": page}
+        if jira_key and not total:
+            history, _ = events.search_events(conn, project_id=project_id, jira_key=jira_key.upper(), page=page)
+            result["historical_events"] = history
+        return json.dumps(result, ensure_ascii=False)
+    except _TOOL_ERRORS as e:
+        return _err(e)
+
+
+@mcp.tool()
+def record_work_handoff(item_id: int, data: HandoffCreate) -> str:
+    """Atomically checkpoint progress, evidence and a follow-up. Retry the exact request with its source_key."""
+    from .services import work_items
+    try:
+        return json.dumps(work_items.record_handoff(_conn(), item_id, data), ensure_ascii=False)
+    except _TOOL_ERRORS as e:
+        return _err(e)
+
+
+@mcp.tool()
+def get_weekly_review(day: date | None = None, project_id: int | None = None) -> str:
+    """Read a local Monday–Sunday report with grouped evidence, confirmed accomplishments, cases and lesson use."""
+    from .services import work_review
+    try:
+        return json.dumps(work_review.weekly_review(_conn(), day, project_id), ensure_ascii=False)
+    except _TOOL_ERRORS as e:
+        return _err(e)
+
+
+@mcp.tool()
+def propose_lesson(data: LessonCreate) -> str:
+    """Propose a sourced skill or process lesson for review in the Lessons page."""
+    from .services import learning
+    try:
+        return json.dumps(learning.create_lesson(_conn(), data), ensure_ascii=False)
+    except _TOOL_ERRORS as e:
+        return _err(e)
+
+
+@mcp.tool()
+def recall_lessons(query: str, project_id: int | None = None) -> str:
+    """Retrieve relevant confirmed lessons including applicability, limits, source and matching reasons."""
+    from .services import learning
+    try:
+        return json.dumps(learning.recall_lessons(_conn(), query, project_id=project_id), ensure_ascii=False)
+    except _TOOL_ERRORS as e:
+        return _err(e)
+
+
+@mcp.tool()
+def record_lesson_use(lesson_id: int, data: LessonUseCreate) -> str:
+    """Record how a confirmed lesson applied on another work item, including observed outcome."""
+    from .services import learning
+    try:
+        return json.dumps(learning.record_lesson_use(_conn(), lesson_id, **data.model_dump()), ensure_ascii=False)
     except _TOOL_ERRORS as e:
         return _err(e)
 

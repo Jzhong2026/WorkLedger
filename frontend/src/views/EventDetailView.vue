@@ -150,8 +150,12 @@ async function snapshot() {
       <Badge v-if="event.user_edited" variant="warn" label="edited" />
     </div>
     <h1>{{ event.summary || 'Event detail' }}</h1>
-
     <div class="card-actions event-actions">
+      <RouterLink
+        :to="{ name: 'work-items', query: {
+          discover: '1', source_event_id: event.id, project_id: event.project_id || undefined,
+        } }"
+      >Track as work item</RouterLink>
       <RouterLink :to="{ name: 'retrospective', query: { event: event.id, entry: 'accomplishment' } }">Create accomplishment</RouterLink>
       <RouterLink :to="{ name: 'retrospective', query: { event: event.id, entry: 'case' } }">Create case</RouterLink>
     </div>
@@ -235,6 +239,6 @@ async function snapshot() {
 </template>
 
 <style scoped>
-.event-actions { margin-bottom: 1rem; }
+.event-actions { gap: 14px; margin-bottom: 1rem; }
 .snapshot-box { overflow-wrap: anywhere; }
 </style>

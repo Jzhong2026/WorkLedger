@@ -4,7 +4,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime
 
-from ..db import DatabaseError
+from ..db import DatabaseError, write_transaction
 from ..schemas import TodoCreate, TodoUpdate
 
 
@@ -29,7 +29,7 @@ def create_todo(conn: sqlite3.Connection, data: TodoCreate) -> dict:
 
     completed_at = now if data.status == "done" else None
     try:
-        with conn:
+        with write_transaction(conn):
             conn.execute(
                 """INSERT INTO todos
                    (title, description, status, event_id, wait_target,

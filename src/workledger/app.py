@@ -26,7 +26,13 @@ def create_app() -> FastAPI:
     app = FastAPI(title="WorkLedger", version="0.1.0", lifespan=lifespan)
 
     from .routers.api import router as api_router
+    from .routers.learning import router as learning_router
+    from .routers.work_items import router as work_items_router
+    from .routers.work_review import router as work_review_router
     app.include_router(api_router, prefix="/api")
+    app.include_router(work_items_router, prefix="/api")
+    app.include_router(learning_router, prefix="/api")
+    app.include_router(work_review_router, prefix="/api")
 
     @app.exception_handler(DatabaseError)
     async def db_error_handler(request: Request, exc: DatabaseError):

@@ -9,6 +9,7 @@ import EmptyState from '@/components/EmptyState.vue'
 import EventCard from '@/components/EventCard.vue'
 import RetrospectiveEntryForm from '@/components/RetrospectiveEntryForm.vue'
 import type { Narrative, WorkEvent } from '@/types'
+import type { LessonOutcome } from '@/types/learning'
 
 const route = useRoute()
 const router = useRouter()
@@ -31,7 +32,12 @@ const source = ref<WorkEvent | null>(null)
 const sourceLoading = ref(false)
 const sourceError = ref('')
 let sourceRequest = 0
-const pageCount = computed(() => Math.ceil(Math.max(0, ...Object.values(data.value?.totals ?? {})) / pageSize))
+const pageCount = computed(() => data.value?.pages ?? 0)
+const lessonOutcomes: Record<LessonOutcome, string> = {
+  applied: 'Applied',
+  helped: 'Helped',
+  did_not_help: 'Did not help',
+}
 
 async function loadSource() {
   const request = ++sourceRequest
@@ -121,6 +127,7 @@ async function synthesize() {
 
 <template>
   <h1>Retrospective</h1>
+  <div class="card-actions"><RouterLink to="/weekly">Prepare weekly report</RouterLink><RouterLink to="/learning">Find lessons</RouterLink></div>
 
   <div v-if="sourceLoading" class="loading">Loading source event…</div>
   <div v-else-if="sourceError" class="card" role="alert">
@@ -154,6 +161,12 @@ async function synthesize() {
     <p class="meta">
       Records sent · {{ narrative.coverage.included.accomplishments }}/{{ narrative.coverage.totals.accomplishments }} accomplishments ·
       {{ narrative.coverage.included.cases }}/{{ narrative.coverage.totals.cases }} cases ·
+      <template v-if="narrative.coverage.totals.lessons">
+        {{ narrative.coverage.included.lessons }}/{{ narrative.coverage.totals.lessons }} confirmed lessons ·
+      </template>
+      <template v-if="narrative.coverage.totals.lesson_uses">
+        {{ narrative.coverage.included.lesson_uses }}/{{ narrative.coverage.totals.lesson_uses }} lesson application records ·
+      </template>
       {{ narrative.coverage.included.events }}/{{ narrative.coverage.totals.events }} work events
     </p>
     <p class="narrative-text">{{ narrative.narrative }}</p>
@@ -196,6 +209,53 @@ async function synthesize() {
       </article>
     </div>
     <EmptyState v-else :message="data.totals.cases ? 'No cases on this page.' : 'No cases in this period.'" />
+
+    <template v-if="data.totals.lessons">
+      <h2>Confirmed skills &amp; process lessons ({{ data.totals.lessons }})</h2>
+      <div v-if="data.lessons.length" class="card-list">
+        <article v-for="lesson in data.lessons" :key="lesson.id" class="card">
+          <div class="card-header">
+            <Badge variant="type" :label="lesson.kind === 'skill' ? 'Skill' : 'Process improvement'" />
+            <RouterLink :to="{ name: 'learning', query: { lesson_id: lesson.id } }">{{ lesson.title }}</RouterLink>
+          </div>
+          <p><strong>Trigger:</strong> {{ lesson.trigger }}</p>
+          <p><strong>First step:</strong> {{ lesson.first_step }}</p>
+          <p v-if="lesson.limits"><strong>Limits:</strong> {{ lesson.limits }}</p>
+          <div class="card-meta">
+            <span>Confirmed {{ lesson.reviewed_on }}</span>
+            <RouterLink :to="{ name: 'work-item', params: { id: lesson.source_work_item_id } }">{{ lesson.source_work_item_title }}</RouterLink>
+            <RouterLink v-if="lesson.source_event_id" :to="{ name: 'event', params: { id: lesson.source_event_id } }">Source event</RouterLink>
+            <a v-if="lesson.evidence_url" :href="lesson.evidence_url" target="_blank" rel="noopener noreferrer">Evidence</a>
+            <a v-if="lesson.source_event_url && lesson.source_event_url !== lesson.evidence_url"
+              :href="lesson.source_event_url" target="_blank" rel="noopener noreferrer">Source evidence</a>
+          </div>
+        </article>
+      </div>
+      <EmptyState v-else message="No confirmed lessons on this page." />
+    </template>
+
+    <template v-if="data.totals.lesson_uses">
+      <h2>Lesson applications &amp; outcomes ({{ data.totals.lesson_uses }})</h2>
+      <div v-if="data.lesson_uses.length" class="card-list">
+        <article v-for="entry in data.lesson_uses" :key="entry.id" class="card">
+          <div class="card-header">
+            <Badge :variant="entry.outcome === 'helped' ? 'ok' : entry.outcome === 'did_not_help' ? 'warn' : 'type'"
+              :label="lessonOutcomes[entry.outcome]" />
+            <RouterLink :to="{ name: 'learning', query: { lesson_id: entry.lesson_id, work_item_id: entry.work_item_id } }">{{ entry.title }}</RouterLink>
+          </div>
+          <p v-if="entry.detail">{{ entry.detail }}</p>
+          <div class="card-meta">
+            <span>{{ entry.recorded_on }}</span>
+            <span>Applied in <RouterLink :to="{ name: 'work-item', params: { id: entry.work_item_id } }">{{ entry.work_item_title }}</RouterLink></span>
+            <RouterLink v-if="entry.source_event_id" :to="{ name: 'event', params: { id: entry.source_event_id } }">Lesson source event</RouterLink>
+            <a v-if="entry.evidence_url" :href="entry.evidence_url" target="_blank" rel="noopener noreferrer">Lesson evidence</a>
+            <a v-if="entry.source_event_url && entry.source_event_url !== entry.evidence_url"
+              :href="entry.source_event_url" target="_blank" rel="noopener noreferrer">Source evidence</a>
+          </div>
+        </article>
+      </div>
+      <EmptyState v-else message="No lesson application records on this page." />
+    </template>
 
     <h2>Work events ({{ data.totals.events }})</h2>
     <div v-if="data.events.length" class="card-list">

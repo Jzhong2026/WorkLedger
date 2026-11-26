@@ -1,3 +1,8 @@
+---
+name: workledger
+description: Use WorkLedger MCP to resume work by project or Jira issue, checkpoint verified progress, hand off to another agent, recall reviewed lessons, or prepare an evidence-backed work report.
+---
+
 # WorkLedger Agent Skill
 
 Record, search, and follow up on your work — PR reviews, fixes, verification, replies, accomplishments, and lessons — through a local-first SQLite assistant.
@@ -22,7 +27,7 @@ WorkLedger exposes an MCP server (stdio transport). Add to your MCP config:
 {
   "mcpServers": {
     "workledger": {
-      "command": "python",
+      "command": "D:/AI/Projects/WorkLedger/.venv/Scripts/python.exe",
       "args": ["-m", "workledger.mcp_server"],
       "cwd": "D:/AI/Projects/WorkLedger",
       "env": {
@@ -49,7 +54,44 @@ Or if installed as a package:
 
 ## Tools
 
-31 tools total. Tools marked 🔑 require the built-in agent (CodeBuddy API key); all others work offline.
+Tools marked 🔑 use the configured built-in agent. The handoff, weekly evidence and lesson-recall tools work locally.
+
+### Starting, handing off, and learning from an assignment
+
+1. Call `get_work_context` with the work item ID, or look up the project/Jira key.
+   Read the goal, verified result, blockers, next owner and related confirmed lessons.
+   Historical events can be used as the source for a newly tracked item.
+2. If the work is new, call `create_work_item` with a `data` object containing a title,
+   goal, actor, and stable source key. Link an existing event via `source_event_id`.
+3. At a meaningful checkpoint, call `record_work_handoff`. Use the version from context,
+   describe your contribution, attach evidence event IDs, and give the next step an owner.
+   The optional to-do and event are recorded in the same transaction as the handoff.
+4. Retry a delivery with the original source key and payload. On a stale version, read the
+   new context and reconcile with the other agent before submitting a new checkpoint.
+5. Use `propose_lesson` for a reusable skill or process improvement. Include the source
+   item, trigger, first step and limits. An operator reviews candidates in **Lessons**.
+   Call `recall_lessons` on later assignments, then `record_lesson_use` with the new
+   work item and observed outcome. Use `get_weekly_review` for the week's evidence.
+
+Example handoff tool arguments (replace IDs and version with values from context):
+
+```json
+{
+  "item_id": 12,
+  "data": {
+    "expected_version": 1,
+    "actor": "Development agent",
+    "source_key": "atlas-lookup:unit-check:1",
+    "summary": "Implemented the lookup change and ran the targeted tests.",
+    "last_verified_result": "Targeted lookup tests passed.",
+    "stage": "verification",
+    "owner": "QA",
+    "next_step": "Verify behavior with the restricted test account.",
+    "event_ids": [42],
+    "todo": {"title": "Verify restricted-account lookup"}
+  }
+}
+```
 
 ### Work events
 | Tool | Purpose |

@@ -1,3 +1,5 @@
+import type { LessonKind, LessonOutcome } from './learning'
+
 export type EventType =
   | 'pr_created' | 'review_finding' | 'comment_analysis' | 'fix'
   | 'verification' | 'reply_drafted' | 'reply_published' | 'manual'
@@ -52,6 +54,7 @@ export interface WorkEvent {
   snapshot_attempt_at: string | null
   snapshot_error: string | null
   snapshot_source_url: string | null
+  source_conflict: boolean
   created_at: string
   updated_at: string
 }
@@ -237,16 +240,50 @@ export interface Insights {
   root_cause_confirmation: { confirmed: number; with_cause: number }
 }
 
+interface RetrospectiveLessonSource {
+  source_work_item_id: number
+  source_work_item_title: string
+  source_event_id: number | null
+  source_event_summary: string | null
+  source_event_url: string | null
+  evidence_url: string | null
+}
+
+export interface RetrospectiveLesson extends RetrospectiveLessonSource {
+  id: number
+  title: string
+  kind: LessonKind
+  trigger: string
+  first_step: string
+  limits: string | null
+  tags: string[]
+  reviewed_on: string
+}
+
+export interface RetrospectiveLessonUse extends RetrospectiveLessonSource {
+  id: number
+  lesson_id: number
+  title: string
+  work_item_id: number
+  work_item_title: string
+  outcome: LessonOutcome
+  detail: string | null
+  recorded_on: string
+}
+
 export interface Retrospective {
   period: string
   date_from: string
   date_to: string
   accomplishments: Accomplishment[]
   cases: Case[]
+  lessons: RetrospectiveLesson[]
+  lesson_uses: RetrospectiveLessonUse[]
   events: WorkEvent[]
-  totals: { accomplishments: number; cases: number; events: number }
+  totals: { accomplishments: number; cases: number; lessons: number; lesson_uses: number; events: number }
   page: number
   page_size: number
+  pages: number
 }
 
 export type ProjectCreate = Pick<Project, 'name' | 'key'> &

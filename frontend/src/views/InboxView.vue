@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { api, errorMessage } from '@/api/client'
+import { api, ApiError, errorMessage } from '@/api/client'
 import { useAsync } from '@/composables/useAsync'
 import { useToast } from '@/stores/toast'
 import Badge from '@/components/Badge.vue'
@@ -21,6 +21,7 @@ const busy = ref(false)
 const editingDraft = ref<number | null>(null)
 const manualNote = ref<number | null>(null)
 const entry = ref<WorkEvent | null>(null)
+const conflictMessage = ref('')
 
 async function reload() {
   await Promise.all([reloadNotes(), reloadDrafts()])
@@ -73,18 +74,32 @@ function saveDraft(id: number, data: DraftEdit) {
   void change(() => api.updateDraft(id, data), 'Draft saved')
 }
 
+async function recordEvent(action: () => Promise<{ event: WorkEvent }>, success: string) {
+  if (busy.value) return
+  busy.value = true
+  conflictMessage.value = ''
+  try {
+    const { event } = await action()
+    await reload()
+    entry.value = event
+    toast.success(success)
+  } catch (error) {
+    entry.value = null
+    if (error instanceof ApiError && error.status === 409) {
+      conflictMessage.value = 'This note or draft is already recorded with different content. No duplicate was created. Review the existing event or adjust the draft before trying again.'
+    }
+    toast.error(errorMessage(error))
+  } finally {
+    busy.value = false
+  }
+}
+
 function confirmDraft(id: number, data: DraftEdit) {
-  void change(async () => {
-    entry.value = (await api.confirmDraft(id, data)).event
-    editingDraft.value = null
-  }, 'Event recorded')
+  void recordEvent(() => api.confirmDraft(id, data), 'Event recorded').then(() => { editingDraft.value = null })
 }
 
 function commitNote(id: number, data: DraftEdit) {
-  void change(async () => {
-    entry.value = (await api.commitNote(id, data)).event
-    manualNote.value = null
-  }, 'Event recorded')
+  void recordEvent(() => api.commitNote(id, data), 'Event recorded').then(() => { manualNote.value = null })
 }
 
 function discardDraft(id: number) {
@@ -121,6 +136,13 @@ function manualDraft(note: InboxNote): DraftEdit {
   <p class="meta" v-if="agentReady">AI drafting sends the selected work note to CodeBuddy. Manual entry stays local.</p>
   <p class="meta" v-else>Record notes manually. AI drafting becomes available when CodeBuddy is configured and enabled.</p>
   <p v-if="entry" role="status">Event recorded. <RouterLink :to="`/event/${entry.id}`">Open {{ entry.summary }}</RouterLink></p>
+  <div v-if="conflictMessage" class="conflict-banner" role="alert">
+    <div>
+      <strong>Already recorded</strong>
+      <p>{{ conflictMessage }}</p>
+    </div>
+    <button type="button" class="ghost-btn" @click="conflictMessage = ''">Dismiss</button>
+  </div>
 
   <h2>Pending drafts</h2>
   <p v-if="draftsLoading && !drafts" class="loading">Loading drafts…</p>

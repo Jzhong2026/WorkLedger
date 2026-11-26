@@ -1,22 +1,45 @@
 <script setup lang="ts">
 import { RouterLink, useRoute } from 'vue-router'
-import { nextTick, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import CommandPalette from './CommandPalette.vue'
 
 const route = useRoute()
 const nav = [
   { to: '/', icon: '◉', label: 'Today' },
+  { to: '/work-items', icon: '▣', label: 'Project progress' },
   { to: '/inbox', icon: '✉', label: 'Inbox' },
   { to: '/search', icon: '⌕', label: 'Search' },
   { to: '/todos', icon: '✓', label: 'To-dos' },
   { to: '/retrospective', icon: '★', label: 'Retrospective' },
+  { to: '/weekly', icon: '▤', label: 'Weekly review' },
+  { to: '/learning', icon: '◇', label: 'Lessons' },
   { to: '/insights', icon: '▤', label: 'Insights' },
   { to: '/settings', icon: '⚙', label: 'Settings' },
 ]
 const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path.startsWith(to))
 const year = new Date().getFullYear()
 const menuOpen = ref(false)
+const paletteOpen = ref(false)
 const menuButton = ref<HTMLButtonElement>()
+const commandButton = ref<HTMLButtonElement>()
 const main = ref<HTMLElement>()
+
+function onGlobalKey(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault()
+    paletteOpen.value = !paletteOpen.value
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onGlobalKey))
+onUnmounted(() => window.removeEventListener('keydown', onGlobalKey))
+
+watch(paletteOpen, async open => {
+  if (!open) {
+    await nextTick()
+    commandButton.value?.focus()
+  }
+})
 
 async function closeMenu() {
   if (!menuOpen.value) return
@@ -43,6 +66,9 @@ watch(() => route.path, async () => {
       </div>
       <div class="topbar-right">
         <span class="topbar-tag">local-first work assistant</span>
+        <button ref="commandButton" type="button" class="command-trigger" aria-label="Open command palette" @click="paletteOpen = true">
+          <span aria-hidden="true">⌕</span> Quick actions <kbd>Ctrl K</kbd>
+        </button>
         <button
           ref="menuButton"
           type="button"
@@ -77,4 +103,5 @@ watch(() => route.path, async () => {
       <slot />
     </main>
   </div>
+  <CommandPalette v-model:open="paletteOpen" />
 </template>

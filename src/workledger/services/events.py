@@ -193,7 +193,7 @@ def search_events(
         conditions.append("pr_number = ?")
         params.append(pr_number)
     if jira_key:
-        conditions.append("jira_key = ?")
+        conditions.append("jira_key = ? COLLATE NOCASE")
         params.append(jira_key)
     if event_type:
         conditions.append("event_type = ?")

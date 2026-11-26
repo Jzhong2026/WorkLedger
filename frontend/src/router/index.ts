@@ -7,6 +7,10 @@ const router = createRouter({
     if (to.path !== from.path) return { top: 0, behavior: 'instant' }
   },
   routes: [
+    { path: '/work-items', name: 'work-items', component: () => import('@/views/WorkItemsView.vue') },
+    { path: '/work-items/:id', name: 'work-item', component: () => import('@/views/WorkItemView.vue'), props: true },
+    { path: '/weekly', name: 'weekly', component: () => import('@/views/WeeklyView.vue') },
+    { path: '/learning', name: 'learning', component: () => import('@/views/LearningView.vue') },
     { path: '/', name: 'today', component: () => import('@/views/TodayView.vue') },
     { path: '/inbox', name: 'inbox', component: () => import('@/views/InboxView.vue') },
     { path: '/search', name: 'search', component: () => import('@/views/SearchView.vue') },

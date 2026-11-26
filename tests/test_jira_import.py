@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from scripts.import_jira import import_issues
+from workledger.services.jira_import import import_issues
 from workledger.schemas import EventUpdate
 from workledger.services import events
 
@@ -67,4 +67,32 @@ def test_import_partial_older_exports_preserve_source_data_without_requiring_opt
     assert 'Full description' in rows[0]['detail']
     assert rows[0]['occurred_at'] == '2026-01-02 10:30:00'
     assert rows[0]['evidence_url'] is None
+
+
+def test_import_stores_status_category_and_assignee_identity(conn):
+    from workledger.services.jira_import import import_issues
+    issue = {
+        'key': 'RW-900', 'summary': 'Identity', 'created': '2026-11-01T09:00:00+0800',
+        'status': {'name': 'In Progress', 'statusCategory': {'key': 'indeterminate'}},
+        'assignee': {'accountId': 'acc-jason', 'displayName': 'JasonZhong'},
+    }
+    import_issues(conn, [issue], project_key='RW', project_name='RW')
+    from workledger.services import events
+    row = events.search_events(conn, jira_key='RW-900')[0][0]
+    extra = json.loads(row['extra_json'])
+    assert extra['status_category'] == 'indeterminate'
+    assert extra['assignee_account_id'] == 'acc-jason'
+    assert extra['assignee_name'] == 'JasonZhong'
+
+
+def test_is_done_handles_chinese_legacy_statuses():
+    from workledger.services.jira_import import is_done
+    assert is_done(None, '已完成') is True
+    assert is_done(None, 'Done') is True
+    assert is_done(None, '已关闭') is True
+    assert is_done(None, 'In Backlog') is False
+    assert is_done(None, 'Acceptance') is False
+    assert is_done('done', 'Whatever') is True
+    assert is_done('indeterminate', '已完成') is False  # category 优先
+    assert is_done(None, None) is False
 

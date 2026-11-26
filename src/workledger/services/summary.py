@@ -136,11 +136,7 @@ def project_summary(conn: sqlite3.Connection, key: str, window: str = "7d") -> d
             "open": len(items), "needs_decision": sum(1 for i in items if i["needs_decision"]), "items": items,
         },
         "sync": {
-            source: {
-                "last_sync_at": state["last_success_at"],
-                "stale": sync_state.is_stale(state, settings.sync_interval_minutes),
-                "last_error": state["last_error"],
-            }
+            source: {**state, "stale": sync_state.is_stale(state, settings.sync_interval_minutes)}
             for source, state in states.items()
         },
     }

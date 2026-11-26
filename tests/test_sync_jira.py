@@ -93,8 +93,11 @@ def test_jql_contains_exclude_window_and_imported_keys(conn, tmp_path):
     assert "project in (RW, AIP)" in main_jql
     assert "key not in (AIP-96)" in main_jql
     assert "updated >= -30d" in main_jql
-    assert "RW-909" in main_jql
     assert "assignee = currentUser()" in main_jql
+    # scope 查询不得内联已导入 keys（数千 key 会撑爆 Windows argv）
+    assert "key in (" not in main_jql
+    later_jqls = [c[c.index("--jql") + 1] for c in calls[1:]]
+    assert any("key in (RW-909)" in jql for jql in later_jqls)
 
 
 def test_failure_records_error(conn, tmp_path):
@@ -129,3 +132,66 @@ def test_pagination_follows_cursor_across_pages(conn, tmp_path):
     assert calls[0][calls[0].index("--limit") + 1] == "100"
     assert calls[1][calls[1].index("--after") + 1] == "c1"
     assert conn.execute("SELECT COUNT(*) FROM work_items").fetchone()[0] == 3
+
+
+def test_imported_key_refresh_chunks_bound_argv(conn, tmp_path):
+    # 回归：3000 个已导入 key 不得内联进主 JQL（Windows argv 32767 上限 → WinError 206）。
+    keys = [f"RW-{n}" for n in range(100000, 103000)]
+    conn.executemany(
+        "INSERT INTO work_events (event_type, occurred_at, source_key, source_agent, jira_key, summary, extra_json) "
+        "VALUES ('manual', '2026-11-01 09:00:00', ?, 'jira-import', ?, ?, '{}')",
+        [(f"jira:{k}", k, f"Summary {k}") for k in keys],
+    )
+    conn.commit()
+    scope_issues = [_issue("RW-100000"), _issue("RW-9001"), _issue("RW-9002")]
+    calls = []
+
+    def runner(args):
+        calls.append(args)
+        jql = args[args.index("--jql") + 1]
+        limit = args[args.index("--limit") + 1]
+        if limit == "1":  # identity probe
+            shown = [i for i in scope_issues if (i.get("assignee") or {}).get("accountId") == "acc-jason"]
+        elif "key in (" in jql:  # refresh chunk：模拟服务端按 key 过滤
+            clause = jql.split("key in (", 1)[1].split(")", 1)[0]
+            chunk = [k.strip() for k in clause.split(",")]
+            shown = [_issue(k) for k in chunk[:2]]
+        else:
+            shown = scope_issues
+        payload = tmp_path / f"twg-argv-{len(calls)}.json"
+        payload.write_text(json.dumps({"data": {"issues": shown}}), encoding="utf-8")
+        return f'output_files:\n  stdout: "{payload}"\n'
+
+    result = sync_jira.sync_jira(conn, runner=runner)
+    assert result["ok"] is True
+    # 每次 runner 调用的完整 argv 必须远低于 Windows 32767 上限
+    assert all(len(" ".join(args)) < 30000 for args in calls)
+    scope_jql = calls[0][calls[0].index("--jql") + 1]
+    assert "key in (" not in scope_jql
+    refresh_calls = [c for c in calls if "key in (" in c[c.index("--jql") + 1]]
+    assert len(refresh_calls) == 6  # ceil(2999 / 500)
+    refreshed = []
+    for c in refresh_calls:
+        clause = c[c.index("--jql") + 1].split("key in (", 1)[1].split(")", 1)[0]
+        chunk = [k.strip() for k in clause.split(",")]
+        assert len(chunk) <= 500
+        refreshed.extend(chunk)
+    assert len(refreshed) == 2999
+    assert "RW-100000" not in refreshed  # scope 已覆盖的 key 不再刷新
+    assert result["created"] == 2  # RW-9001 / RW-9002
+    assert result["updated"] == 13  # RW-100000 + 每块 2 条 × 6 块
+    assert result["issues"] == 15
+    assert result["truncated"] is False
+
+
+def test_top_level_array_payload_records_error_envelope(conn, tmp_path):
+    def runner(args):
+        payload = tmp_path / "twg-array.json"
+        payload.write_text("[1, 2, 3]", encoding="utf-8")
+        return f'output_files:\n  stdout: "{payload}"\n'
+
+    result = sync_jira.sync_jira(conn, runner=runner)
+    assert result["ok"] is False
+    state = sync_state.get_states(conn)["jira"]
+    assert state["last_attempt_at"] is not None
+    assert "get" in state["last_error"]  # AttributeError: 'list' object has no attribute 'get'

@@ -138,7 +138,8 @@ def sync_bitbucket(conn: sqlite3.Connection, *, client: httpx.Client | None = No
             me = client.get("/user")
             me.raise_for_status()
             my_uuid = me.json()["uuid"]
-        except (httpx.HTTPError, httpx.InvalidURL, KeyError, TypeError, ValueError) as exc:
+        except (httpx.HTTPError, httpx.InvalidURL, KeyError, TypeError, ValueError,
+                AttributeError, sqlite3.Error) as exc:
             for source in sources:
                 sync_state.record_error(conn, source, f"Bitbucket identity fetch failed: {exc}")
             return {"ok": False, "error": str(exc), "repos": {}}
@@ -160,7 +161,8 @@ def sync_bitbucket(conn: sqlite3.Connection, *, client: httpx.Client | None = No
                 detail = {**counts, "prs": len(prs), "my_uuid": my_uuid}
                 sync_state.record_success(conn, source, detail)
                 results[source] = {"ok": True, **detail}
-            except (httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError, DatabaseError) as exc:
+            except (httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError,
+                    AttributeError, sqlite3.Error, DatabaseError) as exc:
                 sync_state.record_error(conn, source, str(exc))
                 results[source] = {"ok": False, "error": str(exc)}
         return {"ok": all(r["ok"] for r in results.values()), "repos": results}

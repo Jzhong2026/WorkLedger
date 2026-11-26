@@ -137,3 +137,24 @@ def test_duplicate_rows_deduped_by_id(conn, bb_settings):
     assert conn.execute(
         "SELECT COUNT(*) FROM work_events WHERE repo='transfinderorg/core'"
     ).fetchone()[0] == 1
+
+
+def test_top_level_array_payloads_record_error_envelopes(conn, bb_settings):
+    # /user 返回顶层数组 → 身份包络（TypeError 路径）
+    def user_array(request):
+        return httpx.Response(200, json=[1, 2, 3])
+    client = httpx.Client(transport=httpx.MockTransport(user_array), base_url="https://api.bitbucket.org/2.0")
+    result = sync_bitbucket.sync_bitbucket(conn, client=client)
+    assert result["ok"] is False
+    assert "identity" in sync_state.get_states(conn)["bitbucket:transfinderorg/core"]["last_error"]
+
+    # pullrequests 返回顶层数组 → data.get 抛 AttributeError，必须落包络而非逃逸
+    def pr_array(request):
+        if request.url.path == "/2.0/user":
+            return httpx.Response(200, json={"uuid": JASON_UUID, "display_name": "JasonZhong"})
+        return httpx.Response(200, json=[1, 2, 3])
+    client2 = httpx.Client(transport=httpx.MockTransport(pr_array), base_url="https://api.bitbucket.org/2.0")
+    result2 = sync_bitbucket.sync_bitbucket(conn, client=client2)
+    assert result2["ok"] is False
+    assert result2["repos"]["bitbucket:transfinderorg/core"]["ok"] is False
+    assert "get" in sync_state.get_states(conn)["bitbucket:transfinderorg/core"]["last_error"]

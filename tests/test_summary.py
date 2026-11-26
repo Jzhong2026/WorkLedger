@@ -96,3 +96,17 @@ def test_sync_section_present(seeded, conn):
     result = summary.project_summary(conn, "RW")
     assert "sync" in result
     assert result["window"]["days"] == 7
+
+
+def test_sync_section_matches_status_structure(seeded, conn):
+    sync_state.record_success(
+        conn, "bitbucket:transfinderorg/core", {"my_uuid": "{jason-uuid}", "truncated": True}
+    )
+    result = summary.project_summary(conn, "RW")
+    entry = result["sync"]["bitbucket:transfinderorg/core"]
+    # 与 /api/sync/status 全量对齐：detail / last_attempt_at 必须可见
+    assert entry["detail"]["truncated"] is True
+    assert entry["last_attempt_at"] is not None
+    assert entry["last_success_at"] is not None
+    assert entry["last_error"] is None
+    assert entry["stale"] is False

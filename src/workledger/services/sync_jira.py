@@ -16,6 +16,7 @@ FIELDS = "key,summary,status,issuetype,priority,assignee,parent,created,updated,
 PAGE_SIZE = 100
 MAX_PAGES = 50
 LIMIT = PAGE_SIZE * MAX_PAGES
+REFRESH_CHUNK = 500
 
 
 def _twg_runner(args: list[str]) -> str:
@@ -67,6 +68,15 @@ def build_jql(project_keys: list[str], exclude_keys: list[str], window_days: int
     if imported_keys:
         scope.append(f"key in ({', '.join(imported_keys)})")
     clauses.append("(" + " OR ".join(scope) + ")")
+    return " AND ".join(clauses) + " ORDER BY updated DESC"
+
+
+def build_refresh_jql(project_keys: list[str], exclude_keys: list[str], keys: list[str]) -> str:
+    """Refresh a bounded chunk of imported keys; never inline the full key set (Windows argv cap)."""
+    clauses = [f"project in ({', '.join(project_keys)})"]
+    if exclude_keys:
+        clauses.append(f"key not in ({', '.join(exclude_keys)})")
+    clauses.append(f"key in ({', '.join(keys)})")
     return " AND ".join(clauses) + " ORDER BY updated DESC"
 
 
@@ -137,13 +147,29 @@ def _auto_work_items(conn, issues, previous, my_account_id) -> int:
 
 def sync_jira(conn: sqlite3.Connection, *, runner: Callable[[list[str]], str] | None = None) -> dict:
     runner = runner or _twg_runner
-    sync_state.record_attempt(conn, "jira")
     try:
+        sync_state.record_attempt(conn, "jira")
         project_keys = [k.strip().upper() for k in settings.sync_jira_projects.split(",") if k.strip()]
         exclude_keys = [k.strip().upper() for k in settings.sync_jira_exclude.split(",") if k.strip()]
         imported = _imported_keys(conn, project_keys)
-        jql = build_jql(project_keys, exclude_keys, settings.sync_jira_window_days, imported)
-        issues = _fetch_issues(runner, jql)
+        # Scope first WITHOUT the imported-key clause: inlining thousands of keys
+        # overflows the Windows 32767-char argv cap (WinError 206).
+        scope_jql = build_jql(project_keys, exclude_keys, settings.sync_jira_window_days, [])
+        scope_issues = _fetch_issues(runner, scope_jql)
+        scope_keys = {i["key"].strip().upper() for i in scope_issues}
+        missing = sorted(set(imported) - scope_keys)
+        issues = list(scope_issues)
+        for start in range(0, len(missing), REFRESH_CHUNK):
+            chunk = missing[start:start + REFRESH_CHUNK]
+            issues.extend(_fetch_issues(runner, build_refresh_jql(project_keys, exclude_keys, chunk)))
+        seen: set[str] = set()
+        deduped: list[dict] = []
+        for issue in issues:
+            key = issue["key"].strip().upper()
+            if key not in seen:
+                seen.add(key)
+                deduped.append(issue)
+        issues = deduped
         previous = {
             row["jira_key"]: json.loads(row["extra_json"] or "{}")
             for row in conn.execute(
@@ -164,11 +190,12 @@ def sync_jira(conn: sqlite3.Connection, *, runner: Callable[[list[str]], str] | 
         my_account_id = _my_account_id(conn, runner)
         items_created = _auto_work_items(conn, issues, previous, my_account_id)
         detail = {**counts, "issues": len(issues), "items_created": items_created,
-                  "truncated": len(issues) >= LIMIT}
+                  "truncated": len(scope_issues) >= LIMIT}
         if my_account_id:
             detail["my_account_id"] = my_account_id
         sync_state.record_success(conn, "jira", detail)
         return {"source": "jira", "ok": True, **detail}
-    except (OSError, ValueError, KeyError, TypeError, DatabaseError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, sqlite3.Error,
+            DatabaseError, subprocess.SubprocessError) as exc:
         sync_state.record_error(conn, "jira", str(exc))
         return {"source": "jira", "ok": False, "error": str(exc)}

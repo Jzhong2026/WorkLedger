@@ -31,7 +31,8 @@ async def _sync_loop():
     while True:
         await asyncio.sleep(settings.sync_interval_minutes * 60)
         try:
-            await asyncio.to_thread(sync.sync_all, get_connection(settings.db_path))
+            # get_connection 必须在 worker 线程内求值：SQLite 连接不能跨线程使用
+            await asyncio.to_thread(lambda: sync.sync_all(get_connection(settings.db_path)))
         except Exception:
             # 单源失败已记入 sync_state；循环本身不能死
             continue

@@ -67,6 +67,8 @@ def trigger_bitbucket():
 @router.post("/sync")
 def trigger_all():
     result = sync.sync_all(_conn())
+    if any(part.get("busy") for part in (result["jira"], result["bitbucket"])):
+        raise HTTPException(409, "Sync already in progress for a source.")
     if not result["ok"]:
         raise HTTPException(502, result)
     return result

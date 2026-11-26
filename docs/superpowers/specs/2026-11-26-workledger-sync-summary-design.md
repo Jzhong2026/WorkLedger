@@ -99,9 +99,12 @@ Done/Closed/Resolved/Cancelled/**已完成**/已关闭/已解决/已取消 → d
 
 1. 从 DB 取已导入 keys（`work_events.jira_key` 非空、属于同步项目，**不设数量上限**，保证旧票不掉出同步）。
 2. 组装 JQL（§3），调 twg：
-   `twg jira workitem query --site transfinder --jql … --fields key,summary,status,issuetype,priority,assignee,parent,created,updated,description --limit 200 --output json`。
-   twg 路径来自 settings（.env 配全路径）；从命令输出解析 `output_files.stdout` 路径读 JSON。
-   返回 200 条时在 detail_json 记截断警告。
+   `twg jira workitem query --site transfinder --jql … --fields key,summary,status,issuetype,priority,assignee,parent,created,updated,description --limit 100 --output json`。
+   twg 每页上限 100，用 `pageInfo.hasNextPage/nextCursor` + `--after` 游标翻页，安全上限 50 页（5000 条）；
+   达到上限时 detail_json 记 `truncated: true`。twg 路径来自 settings（.env 配全路径）；
+   从命令输出解析 `output_files.stdout` 路径读 JSON。
+   **已导入 keys 刷新不得内联进主 JQL**（数千 key 会超 Windows 命令行 32767 字符上限）：
+   先跑 scope 查询（assignee/updated 窗口），再对**缺失**的已导入 keys 按 500/块分块查询合并。
 3. 调 `jira_import.import_issues()`（核心逻辑自 `scripts/import_jira.py` 移入
    `src/workledger/services/jira_import.py`；脚本保留为薄 CLI 壳；测试导入路径同步更新），
    `base_url="https://transfinder.atlassian.net"` 保证 browse 链接。
@@ -126,7 +129,7 @@ Done/Closed/Resolved/Cancelled/**已完成**/已关闭/已解决/已取消 → d
 3. 每仓库：`GET /2.0/repositories/{ws}/{repo}/pullrequests`，
    `q=(author.uuid="{uuid}" OR reviewers.uuid="{uuid}") AND updated_on >= {now-30d}`，
    `sort=-updated_on`，`pagelen=50` 翻页直到超出窗口。
-4. 按 §5 规则 upsert 锚点 + 迁移事件；写 sync_state（每仓库一行）。
+4. 按 §5 规则 upsert 锚点（状态只存 extra_json，无迁移事件）；写 sync_state（每仓库一行）。
 5. httpx 升为主依赖（pyproject dependencies）。
 
 ## 8. 调度与触发

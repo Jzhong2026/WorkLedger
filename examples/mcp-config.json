@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "workledger": {
-      "command": "python",
+      "command": "D:/AI/Projects/WorkLedger/.venv/Scripts/python.exe",
       "args": ["-m", "workledger.mcp_server"],
       "cwd": "D:/AI/Projects/WorkLedger",
       "env": {

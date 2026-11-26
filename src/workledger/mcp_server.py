@@ -285,7 +285,7 @@ def record_case(
 
 @mcp.tool()
 def retrospective(period: str = "year", page: int = 1, page_size: int = 100) -> str:
-    """Get a page of accomplishments, cases, and events for month|quarter|year|all."""
+    """Get a page of accomplishments, cases, and events for week|month|quarter|year|all."""
     try:
         from .services.export import retrospective_page
 
@@ -498,7 +498,7 @@ def search_semantic(question: str) -> str:
 
 @mcp.tool()
 def export_retrospective(period: str = "year") -> str:
-    """Export a structured Markdown retrospective (accomplishments, cases, events + evidence). period: month|quarter|year|all."""
+    """Export a structured Markdown retrospective (accomplishments, cases, events + evidence). period: week|month|quarter|year|all."""
     try:
         from .services import export
         return export.export_markdown(_conn(), period)
@@ -627,6 +627,52 @@ def record_lesson_use(lesson_id: int, data: LessonUseCreate) -> str:
     from .services import learning
     try:
         return json.dumps(learning.record_lesson_use(_conn(), lesson_id, **data.model_dump()), ensure_ascii=False)
+    except _TOOL_ERRORS as e:
+        return _err(e)
+
+
+@mcp.tool()
+def sync_jira() -> str:
+    """Refresh Jira RW/AIP snapshots and auto work items. Returns counts and freshness."""
+    from .services import sync_jira as service
+    try:
+        return json.dumps(service.sync_jira(_conn()), ensure_ascii=False)
+    except _TOOL_ERRORS as e:
+        return _err(e)
+
+
+@mcp.tool()
+def sync_bitbucket() -> str:
+    """Refresh my Bitbucket PRs (author or reviewer, last 30 days) across configured repos."""
+    from .services import sync_bitbucket as service
+    try:
+        return json.dumps(service.sync_bitbucket(_conn()), ensure_ascii=False)
+    except _TOOL_ERRORS as e:
+        return _err(e)
+
+
+@mcp.tool()
+def get_project_summary(key: str, window: str = "7d") -> str:
+    """One-call project briefing data: tickets, PRs, todos, work items, counts and sync freshness."""
+    from .services import summary
+    try:
+        return json.dumps(summary.project_summary(_conn(), key, window), ensure_ascii=False)
+    except KeyError as e:
+        return json.dumps({"error": str(e)})
+    except _TOOL_ERRORS as e:
+        return _err(e)
+
+
+@mcp.tool()
+def get_sync_status() -> str:
+    """Last sync time, errors and staleness per source (jira, bitbucket repos)."""
+    from .services import sync_state
+    try:
+        states = sync_state.get_states(_conn())
+        return json.dumps({
+            source: {**state, "stale": sync_state.is_stale(state, settings.sync_interval_minutes)}
+            for source, state in states.items()
+        }, ensure_ascii=False)
     except _TOOL_ERRORS as e:
         return _err(e)
 

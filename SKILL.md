@@ -173,9 +173,12 @@ Markdown (`export_retrospective` also accepts `period="week"`).
 
 Scope rules:
 - Jira is project-level (`SYNC_JIRA_PROJECTS`, default `RW,AIP`) minus `SYNC_JIRA_EXCLUDE`
-  (`AIP-96`), and identifies you by `accountId`, not display name. Your tickets in an active
-  stage become work items (`verification` for Acceptance/Verification/Review); backlog tickets
-  and tickets already done at the previous sync do not. Locally edited fields survive re-sync.
+  (`AIP-96`), and within those projects only tickets assigned to you
+  (`assignee = currentUser()`), updated within `SYNC_JIRA_WINDOW_DAYS` (default 30), or
+  previously imported are synced — not every project ticket. Identity is your `accountId`,
+  not display name. Your tickets in an active stage become work items (`verification` for
+  Acceptance/Verification/Review); backlog tickets and tickets already done at the previous
+  sync do not. Locally edited fields survive re-sync.
 - Bitbucket covers only PRs you authored or review, updated within
   `SYNC_BITBUCKET_WINDOW_DAYS` (default 30). State lives on one `pr_created` anchor per PR
   (`source_agent="bitbucket-sync"`, `source_key="bitbucket:<workspace>/<repo>:pr:<id>"`).
@@ -184,10 +187,10 @@ Scope rules:
   reports an error instead.
 
 Check `stale` before trusting counts: `true` means no success within 2× the poll interval
-(at least 30 minutes, or 24 hours when polling is off), so sync first. Known live limit: the
-twg Jira query returns at most 100 issues per call and sync reads a single page, so in a very
-active project your older assigned tickets can fall outside the result — confirm with
-`search_events` before concluding a ticket is untracked.
+(at least 30 minutes, or 24 hours when polling is off), so sync first. Jira sync walks pages
+of 100 issues, up to 5000 total, newest updates first. `truncated: true` means that cap was
+hit, so the oldest updates fall outside the result. A full Jira sync can take ~2–3 minutes;
+give `sync_jira` and `POST /api/sync/jira` generous client timeouts.
 
 For a local IDE, copy `examples/mcp-config.json` (stdio, no network port).
 

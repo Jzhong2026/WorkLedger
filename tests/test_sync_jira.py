@@ -103,3 +103,29 @@ def test_failure_records_error(conn, tmp_path):
     result = sync_jira.sync_jira(conn, runner=broken)
     assert result["ok"] is False
     assert "twg exploded" in sync_state.get_states(conn)["jira"]["last_error"]
+
+
+def test_pagination_follows_cursor_across_pages(conn, tmp_path):
+    calls = []
+
+    def runner(args):
+        calls.append(args)
+        limit = args[args.index("--limit") + 1]
+        if limit == "1":  # identity probe: one page, no cursor
+            page = {"data": {"issues": [_issue("RW-920")]}}
+        elif "--after" in args:
+            page = {"data": {"issues": [_issue("RW-922")]}}
+        else:
+            page = {"data": {"issues": [_issue("RW-920"), _issue("RW-921")]},
+                    "pageInfo": {"hasNextPage": True, "nextCursor": "c1"}}
+        payload = tmp_path / f"twg-page-{len(calls)}.json"
+        payload.write_text(json.dumps(page), encoding="utf-8")
+        return f'output_files:\n  stdout: "{payload}"\n'
+
+    result = sync_jira.sync_jira(conn, runner=runner)
+    assert result["ok"] is True
+    assert result["created"] == 3
+    assert result["issues"] == 3
+    assert calls[0][calls[0].index("--limit") + 1] == "100"
+    assert calls[1][calls[1].index("--after") + 1] == "c1"
+    assert conn.execute("SELECT COUNT(*) FROM work_items").fetchone()[0] == 3

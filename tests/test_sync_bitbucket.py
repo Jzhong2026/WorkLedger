@@ -116,3 +116,24 @@ def test_user_non_json_response_records_error(conn, bb_settings):
     result = sync_bitbucket.sync_bitbucket(conn, client=client)
     assert result["ok"] is False
     assert "identity" in sync_state.get_states(conn)["bitbucket:transfinderorg/core"]["last_error"]
+
+
+def test_invalid_url_records_identity_error(conn, bb_settings):
+    def handler(request):
+        if request.url.path == "/2.0/user":
+            raise httpx.InvalidURL("bad proxy")
+        return httpx.Response(404)
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://api.bitbucket.org/2.0")
+    result = sync_bitbucket.sync_bitbucket(conn, client=client)
+    assert result["ok"] is False
+    assert "identity" in sync_state.get_states(conn)["bitbucket:transfinderorg/core"]["last_error"]
+
+
+def test_duplicate_rows_deduped_by_id(conn, bb_settings):
+    result = sync_bitbucket.sync_bitbucket(conn, client=_client([_pr(), _pr()]))
+    repo = result["repos"]["bitbucket:transfinderorg/core"]
+    assert repo["created"] == 1
+    assert repo["prs"] == 1
+    assert conn.execute(
+        "SELECT COUNT(*) FROM work_events WHERE repo='transfinderorg/core'"
+    ).fetchone()[0] == 1

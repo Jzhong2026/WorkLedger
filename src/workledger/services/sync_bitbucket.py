@@ -21,6 +21,7 @@ def _client() -> httpx.Client:
         base_url="https://api.bitbucket.org/2.0",
         auth=(settings.atlassian_user_email, settings.atlassian_api_token),
         timeout=30,
+        trust_env=False,
     )
 
 
@@ -52,7 +53,8 @@ def _fetch_prs(client: httpx.Client, workspace: str, repo: str, my_uuid: str, cu
         if "next" not in data or oldest < cutoff:
             break
         page += 1
-    return [pr for pr in prs if datetime.fromisoformat(pr["updated_on"]) >= cutoff]
+    distinct = {pr["id"]: pr for pr in prs}
+    return [pr for pr in distinct.values() if datetime.fromisoformat(pr["updated_on"]) >= cutoff]
 
 
 def _upsert_pr(conn, pr: dict, repo_full: str, project_id: int | None, pattern: re.Pattern) -> str:
@@ -136,7 +138,7 @@ def sync_bitbucket(conn: sqlite3.Connection, *, client: httpx.Client | None = No
             me = client.get("/user")
             me.raise_for_status()
             my_uuid = me.json()["uuid"]
-        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+        except (httpx.HTTPError, httpx.InvalidURL, KeyError, TypeError, ValueError) as exc:
             for source in sources:
                 sync_state.record_error(conn, source, f"Bitbucket identity fetch failed: {exc}")
             return {"ok": False, "error": str(exc), "repos": {}}
@@ -158,7 +160,7 @@ def sync_bitbucket(conn: sqlite3.Connection, *, client: httpx.Client | None = No
                 detail = {**counts, "prs": len(prs), "my_uuid": my_uuid}
                 sync_state.record_success(conn, source, detail)
                 results[source] = {"ok": True, **detail}
-            except (httpx.HTTPError, ValueError, KeyError, TypeError, DatabaseError) as exc:
+            except (httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError, DatabaseError) as exc:
                 sync_state.record_error(conn, source, str(exc))
                 results[source] = {"ok": False, "error": str(exc)}
         return {"ok": all(r["ok"] for r in results.values()), "repos": results}

@@ -13,7 +13,9 @@ from ..work_item_models import WorkItemCreate
 from . import jira_import, sync_state, work_items
 
 FIELDS = "key,summary,status,issuetype,priority,assignee,parent,created,updated,description"
-LIMIT = 200
+PAGE_SIZE = 100
+MAX_PAGES = 50
+LIMIT = PAGE_SIZE * MAX_PAGES
 
 
 def _twg_runner(args: list[str]) -> str:
@@ -35,15 +37,26 @@ def _stdout_path(output: str) -> Path:
 
 
 def _fetch_issues(runner: Callable[[list[str]], str], jql: str, limit: int = LIMIT) -> list[dict]:
-    output = runner([
-        "jira", "workitem", "query", "--site", settings.sync_jira_site,
-        "--jql", jql, "--fields", FIELDS, "--limit", str(limit), "--output", "json",
-    ])
-    payload = json.loads(_stdout_path(output).read_text(encoding="utf-8-sig"))
-    issues = payload.get("data", payload)["issues"]
-    if not isinstance(issues, list):
-        raise ValueError("twg query result must contain an issues array.")
-    return issues
+    issues: list[dict] = []
+    cursor: str | None = None
+    for _ in range(MAX_PAGES):
+        args = [
+            "jira", "workitem", "query", "--site", settings.sync_jira_site,
+            "--jql", jql, "--fields", FIELDS, "--limit", str(min(limit, PAGE_SIZE)), "--output", "json",
+        ]
+        if cursor:
+            args += ["--after", cursor]
+        output = runner(args)
+        payload = json.loads(_stdout_path(output).read_text(encoding="utf-8-sig"))
+        page_issues = payload.get("data", payload)["issues"]
+        if not isinstance(page_issues, list):
+            raise ValueError("twg query result must contain an issues array.")
+        issues.extend(page_issues)
+        info = payload.get("pageInfo") or {}
+        if len(issues) >= limit or not info.get("hasNextPage") or not info.get("nextCursor"):
+            break
+        cursor = info["nextCursor"]
+    return issues[:limit]
 
 
 def build_jql(project_keys: list[str], exclude_keys: list[str], window_days: int, imported_keys: list[str]) -> str:

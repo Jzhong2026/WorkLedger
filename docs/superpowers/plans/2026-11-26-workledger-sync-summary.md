@@ -1810,6 +1810,8 @@ def get_sync_status() -> str:
 }
 ```
 
+顺带修正两处过期 docstring（Task 7 裁决）：`export_retrospective`（约 :501）与 `retrospective`（约 :288）的 period 列表都改为 `week|month|quarter|year|all`。
+
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_sync_mcp.py -q --basetemp="D:\tmp\Debug\pytest-workledger"`

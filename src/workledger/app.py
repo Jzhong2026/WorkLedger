@@ -43,6 +43,7 @@ def create_app() -> FastAPI:
 
     from .routers.api import router as api_router
     from .routers.learning import router as learning_router
+    from .routers.summary import router as summary_router
     from .routers.sync import router as sync_router
     from .routers.work_items import router as work_items_router
     from .routers.work_review import router as work_review_router
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(work_items_router, prefix="/api")
     app.include_router(learning_router, prefix="/api")
     app.include_router(work_review_router, prefix="/api")
+    app.include_router(summary_router, prefix="/api")
     app.include_router(sync_router, prefix="/api")
 
     @app.exception_handler(DatabaseError)

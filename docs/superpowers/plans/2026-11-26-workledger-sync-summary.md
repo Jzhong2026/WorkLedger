@@ -824,6 +824,15 @@ def test_user_fetch_failure_records_error_on_all_sources(conn, bb_settings):
     result = sync_bitbucket.sync_bitbucket(conn, client=client)
     assert result["ok"] is False
     assert "identity" in sync_state.get_states(conn)["bitbucket:transfinderorg/core"]["last_error"]
+
+
+def test_user_non_json_response_records_error(conn, bb_settings):
+    def handler(request):
+        return httpx.Response(200, text="<html>login</html>")
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://api.bitbucket.org/2.0")
+    result = sync_bitbucket.sync_bitbucket(conn, client=client)
+    assert result["ok"] is False
+    assert "identity" in sync_state.get_states(conn)["bitbucket:transfinderorg/core"]["last_error"]
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -972,7 +981,7 @@ def sync_bitbucket(conn: sqlite3.Connection, *, client: httpx.Client | None = No
             me = client.get("/user")
             me.raise_for_status()
             my_uuid = me.json()["uuid"]
-        except (httpx.HTTPError, KeyError, TypeError) as exc:
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
             for source in sources:
                 sync_state.record_error(conn, source, f"Bitbucket identity fetch failed: {exc}")
             return {"ok": False, "error": str(exc), "repos": {}}
@@ -1006,7 +1015,7 @@ def sync_bitbucket(conn: sqlite3.Connection, *, client: httpx.Client | None = No
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_sync_bitbucket.py -q --basetemp="D:\tmp\Debug\pytest-workledger"`
-Expected: 6 passed
+Expected: 7 passed
 
 - [ ] **Step 5: 全套回归 + 提交**
 

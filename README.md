@@ -18,6 +18,28 @@ follow-ups, and evidence. The browser app and stdio MCP server share a SQLite da
 See the [Quick Start](examples/quickstart.md) for installation, configuration, Jira import,
 and backup. See [SKILL.md](SKILL.md) for MCP tool use.
 
+## Live sync, summary, and health
+
+Set `ATLASSIAN_USER_EMAIL`, `ATLASSIAN_API_TOKEN`, and `TWG_CLI_PATH` in `.env` (never
+committed) and restart the server. Sync then also runs in the background every
+`SYNC_INTERVAL_MINUTES` (default 15; `0` disables polling).
+
+- `POST /api/sync/jira`, `POST /api/sync/bitbucket`, or `POST /api/sync` for both.
+  `GET /api/sync/status` reports the last attempt, success, error, and staleness per source.
+- Jira sync refreshes the same snapshots as the import script, at project level
+  (`SYNC_JIRA_PROJECTS`, default `RW,AIP`) minus `SYNC_JIRA_EXCLUDE` (`AIP-96`). Identity is
+  your Jira `accountId`, not your display name. Tickets assigned to you in an active stage
+  become work items automatically; backlog and already-done tickets stay events only.
+- Bitbucket sync covers only PRs you authored or review in `SYNC_BITBUCKET_REPOS`, updated
+  within `SYNC_BITBUCKET_WINDOW_DAYS` (default 30). Each PR is a single `pr_created` anchor
+  whose metadata carries state, reviewers, and Jira keys — no transition events are invented.
+- `GET /api/summary/project?key=RW&window=7d` returns ticket and PR counts, open work items,
+  to-dos, and per-source freshness (`stale`) in one call. `GET /api/health` reports database
+  status, schema version, and the same freshness.
+- `GET /api/export?period=week` exports Monday-through-today Markdown.
+
+Local IDE agents reach the same data over stdio MCP; copy `examples/mcp-config.json`.
+
 Manual capture, search, follow-ups, and Markdown export work locally. Optional drafting,
 AI search, and narrative generation send the selected input to CodeBuddy. Capturing an
 evidence snapshot requests the evidence URL and stores readable text in SQLite.

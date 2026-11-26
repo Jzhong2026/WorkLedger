@@ -152,6 +152,45 @@ Example handoff tool arguments (replace IDs and version with values from context
 The web Inbox can record a note manually without CodeBuddy. AI drafting requires an
 enabled and configured CodeBuddy CLI.
 
+## Live sync, summary, and health
+
+Jira and Bitbucket activity lands in the same ledger. Credentials live in `.env`
+(`ATLASSIAN_USER_EMAIL`, `ATLASSIAN_API_TOKEN`, `TWG_CLI_PATH` — names only, never commit
+values). A background poll syncs both sources every `SYNC_INTERVAL_MINUTES` (default 15,
+`0` off); these tools trigger the same sync on demand.
+
+| Tool | Purpose |
+|------|---------|
+| `sync_jira` | Refresh project Jira snapshots and auto work items; returns counts and freshness |
+| `sync_bitbucket` | Refresh my PRs (author or reviewer, last 30 days) across configured repos |
+| `get_project_summary` | One-call briefing data: `key` + `window` (e.g. `7d`) → tickets, PRs, todos, items, counts, `stale` |
+| `get_sync_status` | Last attempt/success, error, and staleness per source |
+
+HTTP equivalents: `POST /api/sync/jira`, `POST /api/sync/bitbucket`, `POST /api/sync` (both),
+`GET /api/sync/status`, `GET /api/summary/project?key=RW&window=7d`, `GET /api/health`
+(database, schema version, freshness), and `GET /api/export?period=week` for Monday→today
+Markdown (`export_retrospective` also accepts `period="week"`).
+
+Scope rules:
+- Jira is project-level (`SYNC_JIRA_PROJECTS`, default `RW,AIP`) minus `SYNC_JIRA_EXCLUDE`
+  (`AIP-96`), and identifies you by `accountId`, not display name. Your tickets in an active
+  stage become work items (`verification` for Acceptance/Verification/Review); backlog tickets
+  and tickets already done at the previous sync do not. Locally edited fields survive re-sync.
+- Bitbucket covers only PRs you authored or review, updated within
+  `SYNC_BITBUCKET_WINDOW_DAYS` (default 30). State lives on one `pr_created` anchor per PR
+  (`source_agent="bitbucket-sync"`, `source_key="bitbucket:<workspace>/<repo>:pr:<id>"`).
+  There are no transition events — read `extra_json.state` and `reviewers`, don't search for
+  `pr_merged`. A PR already recorded by another agent is never overwritten; that source
+  reports an error instead.
+
+Check `stale` before trusting counts: `true` means no success within 2× the poll interval
+(at least 30 minutes, or 24 hours when polling is off), so sync first. Known live limit: the
+twg Jira query returns at most 100 issues per call and sync reads a single page, so in a very
+active project your older assigned tickets can fall outside the result — confirm with
+`search_events` before concluding a ticket is untracked.
+
+For a local IDE, copy `examples/mcp-config.json` (stdio, no network port).
+
 ## Source identity and deduplication
 
 Every event has a `source_key`. WorkLedger fingerprints the event payload when the

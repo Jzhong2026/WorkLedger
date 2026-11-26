@@ -728,6 +728,7 @@ from workledger.schemas import EventUpdate
 from workledger.services import events, master_data, sync_bitbucket, sync_state
 
 JASON_UUID = "{jason-uuid}"
+_DEFAULT_UPDATED = (datetime.now(UTC) - timedelta(days=1)).isoformat()
 
 
 @pytest.fixture()
@@ -744,7 +745,7 @@ def _pr(pr_id=1, state="OPEN", title="feat(RW-901): something", updated=None, re
     return {
         "id": pr_id, "title": title, "state": state,
         "created_on": "2026-11-01T00:00:00+00:00",
-        "updated_on": updated or (datetime.now(UTC) - timedelta(days=1)).isoformat(),
+        "updated_on": updated or _DEFAULT_UPDATED,
         "author": {"display_name": "JasonZhong", "uuid": JASON_UUID},
         "reviewers": reviewers or [],
         "links": {"html": {"href": f"https://bitbucket.org/transfinderorg/core/pull-requests/{pr_id}"}},
@@ -814,6 +815,15 @@ def test_missing_credentials_records_error(conn, monkeypatch):
     result = sync_bitbucket.sync_bitbucket(conn)
     assert result["ok"] is False
     assert "credentials" in sync_state.get_states(conn)["bitbucket:transfinderorg/core"]["last_error"]
+
+
+def test_user_fetch_failure_records_error_on_all_sources(conn, bb_settings):
+    def handler(request):
+        return httpx.Response(500)
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://api.bitbucket.org/2.0")
+    result = sync_bitbucket.sync_bitbucket(conn, client=client)
+    assert result["ok"] is False
+    assert "identity" in sync_state.get_states(conn)["bitbucket:transfinderorg/core"]["last_error"]
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -958,9 +968,14 @@ def sync_bitbucket(conn: sqlite3.Connection, *, client: httpx.Client | None = No
             sync_state.record_error(conn, source, str(exc))
         return {"ok": False, "error": str(exc), "repos": {}}
     try:
-        me = client.get("/user")
-        me.raise_for_status()
-        my_uuid = me.json()["uuid"]
+        try:
+            me = client.get("/user")
+            me.raise_for_status()
+            my_uuid = me.json()["uuid"]
+        except (httpx.HTTPError, KeyError, TypeError) as exc:
+            for source in sources:
+                sync_state.record_error(conn, source, f"Bitbucket identity fetch failed: {exc}")
+            return {"ok": False, "error": str(exc), "repos": {}}
         cutoff = datetime.now(UTC) - timedelta(days=settings.sync_bitbucket_window_days)
         pattern = _jira_key_pattern()
         project = conn.execute(
@@ -991,7 +1006,7 @@ def sync_bitbucket(conn: sqlite3.Connection, *, client: httpx.Client | None = No
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_sync_bitbucket.py -q --basetemp="D:\tmp\Debug\pytest-workledger"`
-Expected: 5 passed
+Expected: 6 passed
 
 - [ ] **Step 5: 全套回归 + 提交**
 

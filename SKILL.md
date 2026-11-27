@@ -71,7 +71,8 @@ Tools marked 🔑 use the configured built-in agent. The handoff, weekly evidenc
 5. Use `propose_lesson` for a reusable skill or process improvement. Include the source
    item, trigger, first step and limits. An operator reviews candidates in **Lessons**.
    Call `recall_lessons` on later assignments, then `record_lesson_use` with the new
-   work item and observed outcome. Use `get_weekly_review` for the week's evidence.
+   work item and observed outcome. Use `get_weekly_review` for the week's evidence
+   (`scope="mine"` keeps only your sync events).
 
 Example handoff tool arguments (replace IDs and version with values from context):
 
@@ -116,7 +117,7 @@ Example handoff tool arguments (replace IDs and version with values from context
 | `record_accomplishment` | Record an accomplishment for retrospectives |
 | `record_case` | Record a problem/lesson with root cause and verification |
 | `retrospective` | Get accomplishments, cases, events for month/quarter/year |
-| `export_retrospective` | Export structured Markdown (accomplishments/cases/events + evidence) |
+| `export_retrospective` | Export structured Markdown (accomplishments/cases/events + evidence); `scope="mine"` keeps only your sync events |
 | `export_narrative` 🔑 | Agent-synthesized prose retrospective, grounded in records, states coverage gaps |
 
 ### Quick inbox (capture first, organize later)
@@ -143,7 +144,7 @@ Example handoff tool arguments (replace IDs and version with values from context
 ### Insights & evidence
 | Tool | Purpose |
 |------|---------|
-| `get_insights` | Aggregates: totals, events by type/repo/project/month, top root causes, todo status |
+| `get_insights` | Aggregates: totals, events by type (manual records only)/source/repo/project/month, top root causes, todo status |
 | `snapshot_evidence` | Fetch + store an event's evidence URL content to survive link rot (best-effort) |
 
 ### Inbox workflow
@@ -163,13 +164,20 @@ values). A background poll syncs both sources every `SYNC_INTERVAL_MINUTES` (def
 |------|---------|
 | `sync_jira` | Refresh project Jira snapshots and auto work items; returns counts and freshness |
 | `sync_bitbucket` | Refresh my PRs (author or reviewer, last 30 days) across configured repos |
-| `get_project_summary` | One-call briefing data: `key` + `window` (e.g. `7d`) → tickets, PRs, todos, items, counts, `stale` |
+| `get_project_summary` | One-call briefing data: `key` + `window` (e.g. `7d`) → tickets, PRs, todos, items, counts, `stale`; `scope="mine"` keeps only your tickets/PRs |
 | `get_sync_status` | Last attempt/success, error, and staleness per source |
 
 HTTP equivalents: `POST /api/sync/jira`, `POST /api/sync/bitbucket`, `POST /api/sync` (both),
 `GET /api/sync/status`, `GET /api/summary/project?key=RW&window=7d`, `GET /api/health`
 (database, schema version, freshness), and `GET /api/export?period=week` for Monday→today
 Markdown (`export_retrospective` also accepts `period="week"`).
+
+`scope=mine` on `GET /api/summary/project`, `GET /api/export`, and `GET /api/work-review/weekly`
+(or in the `POST /api/work-review/weekly/candidates` body) keeps only tickets assigned to you
+and PRs you authored or review — manual records always stay. Default is `all`; the MCP tools
+`get_project_summary`, `export_retrospective`, and `get_weekly_review` take the same `scope`.
+The web Weekly review page has an **All activity / Mine only** toggle, and AI candidates
+respect the selected scope.
 
 Scope rules:
 - Jira is project-level (`SYNC_JIRA_PROJECTS`, default `RW,AIP`) minus `SYNC_JIRA_EXCLUDE`
@@ -184,15 +192,33 @@ Scope rules:
   (`source_agent="bitbucket-sync"`, `source_key="bitbucket:<workspace>/<repo>:pr:<id>"`).
   There are no transition events — read `extra_json.state` and `reviewers`, don't search for
   `pr_merged`. A PR already recorded by another agent is never overwritten; that source
-  reports an error instead.
+  reports an error instead. A PR observed as MERGED also writes an idempotent accomplishment
+  (`source_key="bitbucket-merge:<workspace>/<repo>:pr:<id>"`, tags `pr,merged`); set
+  `SYNC_RECORD_MERGE_ACCOMPLISHMENTS=false` to disable. Weekly review picks up PRs merged
+  within the week under their Jira key even when created earlier.
 
 Check `stale` before trusting counts: `true` means no success within 2× the poll interval
 (at least 30 minutes, or 24 hours when polling is off), so sync first. Jira sync walks pages
 of 100 issues, up to 5000 total, newest updates first. `truncated: true` means that cap was
-hit, so the oldest updates fall outside the result. A full Jira sync can take ~2–3 minutes;
+hit; sync then merges one unbounded `assignee = currentUser()` query (deduplicated) so your
+own tickets are never dropped. twg socket failures retry up to twice (1s, then 3s backoff)
+before the error lands in `sync_state`. A full Jira sync can take ~2–3 minutes;
 give `sync_jira` and `POST /api/sync/jira` generous client timeouts.
 
 For a local IDE, copy `examples/mcp-config.json` (stdio, no network port).
+
+## Source separation and sync status UI
+
+Events keep their origin (`source_agent`): `jira-import` snapshots, `bitbucket-sync` PR
+anchors, everything else is a human record.
+
+- `get_insights` returns a `by_source` chart (human/jira/bitbucket); `by_type` counts manual
+  records only, so thousands of Jira snapshots no longer inflate the manual type chart.
+- `export_retrospective` renders the events section as `Human records`, `Jira snapshots`,
+  and `Bitbucket PRs` subsections (empty ones omitted).
+- `get_weekly_review` event rows carry a `source` field; the web view shows it as a badge.
+- The web topbar has a **Sync** chip (green fresh / amber stale / red error) that opens a
+  per-source panel with last-success times, recent errors, and a **Sync now** button.
 
 ## Source identity and deduplication
 

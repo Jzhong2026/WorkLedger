@@ -73,6 +73,42 @@ def test_weekly_mine_filters_groups(seeded, conn):
     assert len(result["accomplishments"]) == 1
 
 
+def test_summary_mine_without_identities_matches_nothing(conn):
+    # Fresh conn: no sync_state identities recorded, so account_id/my_uuid are None.
+    # None == None must not count as a mine match (spec: 身份缺失时 mine 分支不匹配).
+    rw = master_data.create_project(conn, name="RW (Atlas)", key="RW")
+    now = datetime.now(UTC)
+    events.create_event(conn, EventCreate(
+        event_type="manual", occurred_at=now, summary="Unassigned ticket", source_agent="jira-import",
+        jira_key="RW-1", project_id=None,
+        extra_json=json.dumps({"assignee_account_id": None, "status": "In Progress", "status_category": "indeterminate"}),
+    ))
+    events.create_event(conn, EventCreate(
+        event_type="pr_created", occurred_at=now, summary="Anon PR", source_agent="bitbucket-sync",
+        repo="transfinderorg/core", pr_number=1,
+        extra_json=json.dumps({"state": "OPEN", "author_uuid": None, "reviewers": [], "bitbucket_updated": now.isoformat()}),
+    ))
+    # Reviewer lacking uuid must not match a None my_uuid either.
+    events.create_event(conn, EventCreate(
+        event_type="pr_created", occurred_at=now, summary="Uuid-less reviewer PR", source_agent="bitbucket-sync",
+        repo="transfinderorg/core", pr_number=2,
+        extra_json=json.dumps({"state": "OPEN", "author_uuid": "{o}", "reviewers": [{"display_name": "No UUID"}], "bitbucket_updated": now.isoformat()}),
+    ))
+    conn.execute("UPDATE work_events SET project_id=? WHERE jira_key IS NOT NULL OR repo IS NOT NULL", (rw["id"],))
+    conn.commit()
+
+    mine = summary.project_summary(conn, "RW", "7d", scope="mine")
+    assert mine["tickets"]["open"] == []
+    assert mine["prs"]["items"] == []
+
+    all_result = summary.project_summary(conn, "RW", "7d")
+    by_number = {p["pr_number"]: p for p in all_result["prs"]["items"]}
+    assert by_number[1]["mine"]["authored"] is False
+    assert by_number[1]["mine"]["needs_my_review"] is False
+    assert by_number[2]["mine"]["reviewing"] is False
+    assert by_number[2]["mine"]["needs_my_review"] is False
+
+
 def test_summary_router_scope_validation(seeded, conn, db_path, monkeypatch):
     app = FastAPI()
     app.include_router(summary_router.router, prefix="/api")

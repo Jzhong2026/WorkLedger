@@ -55,7 +55,8 @@ def project_summary(conn: sqlite3.Connection, key: str, window: str = "7d", scop
     ).fetchall()
     if scope == "mine":
         ticket_rows = [r for r in ticket_rows
-                       if json.loads(r["extra_json"] or "{}").get("assignee_account_id") == account_id]
+                       if account_id is not None
+                       and json.loads(r["extra_json"] or "{}").get("assignee_account_id") == account_id]
     tickets = [_ticket(row, item_ids) for row in ticket_rows]
     by_status: dict[str, int] = {}
     for ticket in tickets:
@@ -79,14 +80,16 @@ def project_summary(conn: sqlite3.Connection, key: str, window: str = "7d", scop
             if state != "OPEN" and not (start <= updated <= today_iso):
                 continue
             reviewers = extra.get("reviewers") or []
-            mine_review = next((r for r in reviewers if r.get("uuid") == my_uuid), None)
+            mine_review = next(
+                (r for r in reviewers if my_uuid is not None and r.get("uuid") == my_uuid), None
+            )
             prs.append({
                 "repo": row["repo"], "pr_number": row["pr_number"], "title": row["summary"],
                 "state": state, "author": extra.get("author"), "reviewers": reviewers,
                 "updated_on": extra.get("bitbucket_updated"), "url": extra.get("url"),
                 "jira_keys": extra.get("jira_keys") or [],
                 "mine": {
-                    "authored": extra.get("author_uuid") == my_uuid,
+                    "authored": my_uuid is not None and extra.get("author_uuid") == my_uuid,
                     "reviewing": mine_review is not None,
                     "needs_my_review": state == "OPEN" and mine_review is not None and not mine_review.get("approved"),
                 },

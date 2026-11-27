@@ -6,6 +6,7 @@ import sqlite3
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from time import sleep
 
 from ..config import settings
 from ..db import DatabaseError
@@ -20,13 +21,21 @@ REFRESH_CHUNK = 500
 
 
 def _twg_runner(args: list[str]) -> str:
-    result = subprocess.run(
-        [settings.twg_cli_path, *args],
-        capture_output=True, text=True, encoding="utf-8", timeout=120,
-    )
-    if result.returncode != 0:
-        raise ValueError(f"twg exited {result.returncode}: {(result.stderr or result.stdout)[:500]}")
-    return result.stdout
+    last: Exception | None = None
+    for attempt in range(3):
+        try:
+            result = subprocess.run(
+                [settings.twg_cli_path, *args],
+                capture_output=True, text=True, encoding="utf-8", timeout=120,
+            )
+            if result.returncode == 0:
+                return result.stdout
+            last = ValueError(f"twg exited {result.returncode}: {(result.stderr or result.stdout)[:500]}")
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            last = exc
+        if attempt < 2:
+            sleep(1 if attempt == 0 else 3)
+    raise last
 
 
 def _stdout_path(output: str) -> Path:
@@ -155,13 +164,22 @@ def sync_jira(conn: sqlite3.Connection, *, runner: Callable[[list[str]], str] | 
         # Scope first WITHOUT the imported-key clause: inlining thousands of keys
         # overflows the Windows 32767-char argv cap (WinError 206).
         scope_jql = build_jql(project_keys, exclude_keys, settings.sync_jira_window_days, [])
-        scope_issues = _fetch_issues(runner, scope_jql)
+        scope_issues = _fetch_issues(runner, scope_jql, limit=LIMIT)
         scope_keys = {i["key"].strip().upper() for i in scope_issues}
         missing = sorted(set(imported) - scope_keys)
         issues = list(scope_issues)
         for start in range(0, len(missing), REFRESH_CHUNK):
             chunk = missing[start:start + REFRESH_CHUNK]
             issues.extend(_fetch_issues(runner, build_refresh_jql(project_keys, exclude_keys, chunk)))
+        # Scope hit the cap: Jason's tickets may have been squeezed out of the
+        # window. Merge an unbounded currentUser() query; dedupe below handles
+        # overlap (imported open tickets are already covered by the refresh).
+        if len(scope_issues) >= LIMIT:
+            mine_jql = f"project in ({', '.join(project_keys)})"
+            if exclude_keys:
+                mine_jql += f" AND key not in ({', '.join(exclude_keys)})"
+            mine_jql += " AND assignee = currentUser() ORDER BY updated DESC"
+            issues.extend(_fetch_issues(runner, mine_jql))
         seen: set[str] = set()
         deduped: list[dict] = []
         for issue in issues:

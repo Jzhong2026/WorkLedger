@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from workledger.db import get_connection
 from workledger.routers import summary as summary_router
+from workledger.routers import work_review as work_review_router
 from workledger.schemas import AccomplishmentCreate, EventCreate
 from workledger.services import events, master_data, retrospectives, summary, sync_state, work_review
 from workledger.services import export as export_service
@@ -119,3 +120,33 @@ def test_summary_router_scope_validation(seeded, conn, db_path, monkeypatch):
     with TestClient(app) as client:
         assert client.get("/api/summary/project?key=RW&scope=mine").json()["scope"] == "mine"
         assert client.get("/api/summary/project?key=RW&scope=bogus").status_code == 422
+
+
+def test_weekly_candidates_mine_excludes_other_records(seeded, conn, monkeypatch):
+    captured = []
+
+    def fake_suggestions(records, task):
+        captured.append(records)
+        return {"suggestions": [], "coverage": {"included": len(records), "total": len(records)}}
+
+    monkeypatch.setattr(work_review, "_grounded_suggestions", fake_suggestions)
+    other_ids = {row["id"] for row in conn.execute(
+        "SELECT id FROM work_events WHERE summary IN ('Other ticket', 'Other PR')")}
+    assert other_ids
+    work_review.weekly_candidates(conn, scope="mine")
+    mine_records = captured[-1]
+    assert {"My ticket", "My PR"} <= {r["summary"] for r in mine_records}
+    assert not other_ids & {r["id"] for r in mine_records}
+    work_review.weekly_candidates(conn)  # default all still feeds every record
+    assert other_ids <= {r["id"] for r in captured[-1]}
+
+
+def test_candidates_router_accepts_scope(seeded, conn, db_path, monkeypatch):
+    app = FastAPI()
+    app.include_router(work_review_router.router, prefix="/api")
+    monkeypatch.setattr(work_review_router, "_conn", lambda: get_connection(db_path))
+    monkeypatch.setattr(work_review, "_grounded_suggestions", lambda records, task: {
+        "suggestions": [], "coverage": {"included": len(records), "total": len(records)}})
+    with TestClient(app) as client:
+        assert client.post("/api/work-review/weekly/candidates", json={"scope": "mine"}).status_code == 200
+        assert client.post("/api/work-review/weekly/candidates", json={"scope": "bogus"}).status_code == 422

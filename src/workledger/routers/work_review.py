@@ -14,6 +14,7 @@ router = APIRouter(prefix="/work-review")
 class WeeklyRequest(BaseModel):
     day: date | None = None
     project_id: int | None = Field(default=None, gt=0)
+    scope: Literal["all", "mine"] = "all"
 
 
 class BriefingRequest(BaseModel):
@@ -29,7 +30,7 @@ def weekly(day: date | None = None, project_id: int | None = Query(None, gt=0),
 
 @router.post("/weekly/candidates")
 def candidates(data: WeeklyRequest):
-    return work_review.weekly_candidates(_conn(), data.day, data.project_id)
+    return work_review.weekly_candidates(_conn(), data.day, data.project_id, data.scope)
 
 
 @router.post("/briefing")

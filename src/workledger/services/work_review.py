@@ -126,8 +126,9 @@ def _grounded_suggestions(records: list[dict], task: str) -> dict:
     return result
 
 
-def weekly_candidates(conn, day: date | None = None, project_id: int | None = None) -> dict:
-    report = weekly_review(conn, day, project_id)
+def weekly_candidates(conn, day: date | None = None, project_id: int | None = None,
+                      scope: str = "all") -> dict:
+    report = weekly_review(conn, day, project_id, scope)
     records = [
         {"id": event["id"], "work_item": group["title"], "summary": event["summary"],
          "type": event["event_type"], "verified": bool(event["verification_done"]),

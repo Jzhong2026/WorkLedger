@@ -159,18 +159,21 @@ def sync_bitbucket(conn: sqlite3.Connection, *, client: httpx.Client | None = No
                 with write_transaction(conn):
                     for pr in prs:
                         counts[_upsert_pr(conn, pr, repo_full, project_id, pattern)] += 1
-                # Record a merge accomplishment for every MERGED anchor, idempotently by
-                # source_key. This covers new anchors, OPEN→MERGED transitions, and anchors
-                # already MERGED before this feature shipped (which re-sync as "unchanged").
-                # Written outside write_transaction: create_accomplishment uses `with conn:`
-                # and would otherwise commit the outer transaction early.
+                fetched_ids = sorted({pr["id"] for pr in prs})
+                # Record merge accomplishments for MERGED anchors in the current fetch,
+                # idempotently by source_key. The fetch enforces the identity/window scope;
+                # limiting by its IDs still covers unchanged anchors already MERGED before
+                # this feature shipped. Written outside write_transaction because
+                # create_accomplishment uses `with conn:`.
                 merges_recorded = 0
-                if settings.sync_record_merge_accomplishments:
+                if settings.sync_record_merge_accomplishments and fetched_ids:
+                    placeholders = ",".join("?" for _ in fetched_ids)
                     merged_rows = conn.execute(
                         "SELECT id, pr_number, summary, extra_json FROM work_events "
                         "WHERE source_agent='bitbucket-sync' AND event_type='pr_created' AND repo=? "
-                        "AND json_extract(extra_json, '$.state')='MERGED'",
-                        (repo_full,),
+                        "AND json_extract(extra_json, '$.state')='MERGED' "
+                        f"AND pr_number IN ({placeholders})",
+                        (repo_full, *fetched_ids),
                     ).fetchall()
                     for row in merged_rows:
                         meta = json.loads(row["extra_json"] or "{}")

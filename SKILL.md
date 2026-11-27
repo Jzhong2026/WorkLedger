@@ -72,7 +72,7 @@ Tools marked 🔑 use the configured built-in agent. The handoff, weekly evidenc
    item, trigger, first step and limits. An operator reviews candidates in **Lessons**.
    Call `recall_lessons` on later assignments, then `record_lesson_use` with the new
    work item and observed outcome. Use `get_weekly_review` for the week's evidence
-   (`scope="mine"` keeps only your sync events).
+   (`scope="mine"` keeps your sync events plus manual records).
 
 Example handoff tool arguments (replace IDs and version with values from context):
 
@@ -117,7 +117,7 @@ Example handoff tool arguments (replace IDs and version with values from context
 | `record_accomplishment` | Record an accomplishment for retrospectives |
 | `record_case` | Record a problem/lesson with root cause and verification |
 | `retrospective` | Get accomplishments, cases, events for month/quarter/year |
-| `export_retrospective` | Export structured Markdown (accomplishments/cases/events + evidence); `scope="mine"` keeps only your sync events |
+| `export_retrospective` | Export structured Markdown (accomplishments/cases/events + evidence); `scope="mine"` keeps your sync events plus manual records |
 | `export_narrative` 🔑 | Agent-synthesized prose retrospective, grounded in records, states coverage gaps |
 
 ### Quick inbox (capture first, organize later)

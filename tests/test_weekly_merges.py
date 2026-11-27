@@ -13,14 +13,18 @@ from workledger.services import events, master_data, sync_bitbucket, work_review
 JASON = "{jason-uuid}"
 
 
-def _anchor(conn, pr_id, state, updated, created="2026-01-01T00:00:00+00:00", jira_key="RW-50"):
+OTHER = "{other-uuid}"
+
+
+def _anchor(conn, pr_id, state, updated, created="2026-01-01T00:00:00+00:00", jira_key="RW-50",
+            author_uuid=JASON):
     return events.create_event(conn, EventCreate(
         event_type="pr_created", occurred_at=datetime.fromisoformat(created),
         repo="transfinderorg/core", pr_number=pr_id, jira_key=jira_key,
         source_key=f"bitbucket:transfinderorg/core:pr:{pr_id}", source_agent="bitbucket-sync",
         summary=f"feat(RW-50): PR {pr_id}",
         extra_json=json.dumps({"state": state, "bitbucket_updated": updated,
-                               "author_uuid": JASON, "reviewers": [], "jira_keys": [jira_key]}),
+                               "author_uuid": author_uuid, "reviewers": [], "jira_keys": [jira_key]}),
     ))
 
 
@@ -48,10 +52,10 @@ def bb(monkeypatch, conn):
     master_data.create_project(conn, name="RW", key="RW")
 
 
-def _pr(state, updated):
-    return {"id": 9, "title": "feat(RW-50): x", "state": state,
+def _pr(state, updated, pr_id=9, author_uuid=JASON):
+    return {"id": pr_id, "title": "feat(RW-50): x", "state": state,
             "created_on": "2026-11-01T00:00:00+00:00", "updated_on": updated,
-            "author": {"display_name": "JasonZhong", "uuid": JASON}, "reviewers": [],
+            "author": {"display_name": "JasonZhong", "uuid": author_uuid}, "reviewers": [],
             "links": {"html": {"href": "https://bitbucket.org/transfinderorg/core/pull-requests/9"}},
             "source": {"branch": {"name": "feat"}}, "destination": {"branch": {"name": "main"}}}
 
@@ -88,7 +92,7 @@ def test_merge_accomplishments_can_be_disabled(conn, bb, monkeypatch):
 def test_unchanged_merged_anchor_backfills_accomplishment(conn, bb):
     # An anchor already MERGED before this feature shipped re-syncs as "unchanged";
     # its merge accomplishment must still be backfilled, idempotently.
-    recent = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    recent = (datetime.now(UTC) - timedelta(days=1)).replace(microsecond=0).isoformat()
     _anchor(conn, 9, "MERGED", recent)
     assert conn.execute("SELECT COUNT(*) FROM accomplishments").fetchone()[0] == 0
     sync_bitbucket.sync_bitbucket(conn, client=_client([_pr("MERGED", recent)]))
@@ -96,5 +100,21 @@ def test_unchanged_merged_anchor_backfills_accomplishment(conn, bb):
     assert len(rows) == 1
     assert rows[0]["source_key"] == "bitbucket-merge:transfinderorg/core:pr:9"
     assert rows[0]["event_id"] is not None
+    assert datetime.fromisoformat(rows[0]["occurred_at"]).replace(tzinfo=UTC) == datetime.fromisoformat(recent)
     sync_bitbucket.sync_bitbucket(conn, client=_client([_pr("MERGED", recent)]))
     assert conn.execute("SELECT COUNT(*) FROM accomplishments").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("include_unrelated_pr", [False, True])
+def test_backfill_skips_merged_anchors_outside_current_fetch(conn, bb, include_unrelated_pr):
+    # Historical/stale anchors outside the current identity/window fetch must not
+    # produce accomplishments, including when the current fetch is empty.
+    old = (datetime.now(UTC) - timedelta(days=90)).isoformat()
+    recent = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    _anchor(conn, 999, "MERGED", old, author_uuid=OTHER)
+    _anchor(conn, 1000, "MERGED", recent, author_uuid=OTHER)
+    fetched = [_pr("OPEN", recent, pr_id=10)] if include_unrelated_pr else []
+
+    sync_bitbucket.sync_bitbucket(conn, client=_client(fetched))
+
+    assert conn.execute("SELECT COUNT(*) FROM accomplishments").fetchone()[0] == 0

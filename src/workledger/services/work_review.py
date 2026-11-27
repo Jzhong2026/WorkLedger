@@ -43,7 +43,11 @@ def _weekly_snapshot(conn: sqlite3.Connection, day: date, project_id: int | None
         LEFT JOIN work_events p ON p.id = e.parent_event_id
         LEFT JOIN work_items i ON i.id = ({_ITEM_FOR_EVENT})
         LEFT JOIN work_item_handoffs h ON h.event_id = e.id AND h.item_id = i.id
-        WHERE e.occurred_at >= :start AND e.occurred_at < :stop
+        WHERE (e.occurred_at >= :start AND e.occurred_at < :stop
+               OR (e.source_agent = 'bitbucket-sync' AND e.event_type = 'pr_created'
+                   AND json_extract(e.extra_json, '$.state') = 'MERGED'
+                   AND substr(json_extract(e.extra_json, '$.bitbucket_updated'), 1, 10) >= :start
+                   AND substr(json_extract(e.extra_json, '$.bitbucket_updated'), 1, 10) < :stop))
           AND (:project IS NULL OR i.id IS NOT NULL OR e.project_id = :project)
         ORDER BY e.occurred_at DESC, e.id DESC
     """, params).fetchall()

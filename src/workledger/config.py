@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     sync_bitbucket_repos: str = "core,routefinderapi,routefinder-web"
     sync_bitbucket_project: str = "RW"
     sync_bitbucket_window_days: int = 30
+    sync_record_merge_accomplishments: bool = True
 
     @property
     def data_path(self) -> Path:

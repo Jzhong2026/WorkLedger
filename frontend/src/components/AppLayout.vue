@@ -2,6 +2,7 @@
 import { RouterLink, useRoute } from 'vue-router'
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import CommandPalette from './CommandPalette.vue'
+import SyncStatus from './SyncStatus.vue'
 
 const route = useRoute()
 const nav = [
@@ -66,6 +67,7 @@ watch(() => route.path, async () => {
       </div>
       <div class="topbar-right">
         <span class="topbar-tag">local-first work assistant</span>
+        <SyncStatus />
         <button ref="commandButton" type="button" class="command-trigger" aria-label="Open command palette" @click="paletteOpen = true">
           <span aria-hidden="true">⌕</span> Quick actions <kbd>Ctrl K</kbd>
         </button>

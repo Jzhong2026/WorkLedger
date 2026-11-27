@@ -303,3 +303,13 @@ export interface Narrative {
   narrative: string
   coverage: { included: Retrospective['totals']; totals: Retrospective['totals'] }
 }
+
+export interface SyncSourceState {
+  source: string
+  last_attempt_at: string | null
+  last_success_at: string | null
+  last_error: string | null
+  stale: boolean
+  detail: Record<string, unknown>
+}
+export type SyncStatusMap = Record<string, SyncSourceState>

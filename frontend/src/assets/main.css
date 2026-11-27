@@ -296,3 +296,26 @@ input[type="color"]::-webkit-color-swatch { border: none; border-radius: 5px; }
 .conflict-banner strong { font-size: .88rem; color: var(--warning); }
 .conflict-banner p { font-size: .82rem; color: var(--text-2); margin-top: 2px; }
 .conflict-banner a { font-weight: 600; font-size: .82rem; white-space: nowrap; }
+
+/* ============ Sync status chip ============ */
+.sync-status { position: relative; display: inline-flex; }
+.sync-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-full); color: var(--text-2); font-size: .78rem; cursor: pointer; }
+.sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+.tone-ok .sync-dot { background: #10b981; }
+.tone-stale .sync-dot { background: #f59e0b; }
+.tone-error .sync-dot { background: #ef4444; }
+.sync-panel { position: absolute; top: calc(100% + 8px); right: 0; width: 300px; max-height: 360px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md, 10px); box-shadow: var(--sh-md, 0 8px 24px rgba(0,0,0,.18)); padding: 12px; z-index: 200; }
+.sync-row { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.sync-row-head { display: flex; align-items: center; gap: 6px; }
+.sync-badge { font-size: .68rem; padding: 1px 6px; border-radius: var(--r-full); }
+.sync-badge.stale { background: rgba(245,158,11,.15); color: #b45309; }
+.sync-badge.error { background: rgba(239,68,68,.15); color: #b91c1c; }
+.sync-error { font-size: .72rem; color: #b91c1c; margin: 4px 0 0; overflow-wrap: anywhere; max-height: 3.6em; overflow: hidden; }
+.sync-now { width: 100%; margin-top: 10px; }
+@media (max-width: 600px) {
+  .sync-chip { font-size: 0; gap: 0; padding: 3px 6px; }
+  .command-trigger { padding: 0 8px; font-size: .68rem; }
+  .command-trigger kbd { display: none; }
+  .nav-toggle { padding: 0 10px; }
+  .sync-panel { position: fixed; top: calc(var(--topbar-h) + 8px); left: 12px; right: 12px; width: auto; }
+}

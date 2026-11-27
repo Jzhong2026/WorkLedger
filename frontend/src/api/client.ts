@@ -4,7 +4,7 @@ import type {
   AccomplishmentInput, CaseInput, DraftEdit, EventEdit, Narrative,
   ProjectCreate, ProjectEdit, SnapshotStatus, SprintCreate, SprintEdit,
   EventSearchFilters, ExpandedSearch, InsightsFilters, SearchExpansion, TodaySummary,
-  TodoCreate, TodoListFilters, TodoUpdate,
+  TodoCreate, TodoListFilters, TodoUpdate, SyncStatusMap,
 } from '@/types'
 
 const BASE = '/api'
@@ -124,4 +124,6 @@ export const api = {
   // Insights & agent
   insights: (filters: InsightsFilters = {}) => get<Insights>('/insights' + qs({ ...filters })),
   agentStatus: () => get<{ enabled: boolean; model: string; cli_available: boolean; key_configured: boolean }>('/agent/status'),
+  syncStatus: () => get<SyncStatusMap>('/sync/status'),
+  syncAll: () => post<{ ok: boolean; jira: unknown; bitbucket: unknown }>('/sync'),
 }

@@ -141,6 +141,10 @@ function todoLink(row: LabelValue) {
         <ChartBox type="doughnut" :rows="data.by_type" :link-for="eventLink" />
       </section>
       <section class="card chart-card">
+        <h2>By source</h2>
+        <ChartBox type="doughnut" :rows="data.by_source" />
+      </section>
+      <section class="card chart-card">
         <h2>By repository</h2>
         <ChartBox type="bar" :rows="data.by_repo" horizontal :link-for="eventLink" />
       </section>

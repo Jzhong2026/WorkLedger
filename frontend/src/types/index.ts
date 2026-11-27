@@ -232,6 +232,7 @@ export interface Insights {
     snapshots: number
   }
   by_type: LabelValue[]
+  by_source: LabelValue[]
   by_repo: LabelValue[]
   by_project: LabelValue[]
   by_month: LabelValue[]

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { api, errorMessage, get, post, qs } from '@/api/client'
 import { useAsync } from '@/composables/useAsync'
 import { useToast } from '@/stores/toast'
@@ -8,6 +9,7 @@ import type { Accomplishment, Case } from '@/types'
 interface Evidence {
   id: number; summary: string; occurred_at: string; event_type: string; evidence_url: string | null
   actor: string | null; source_agent: string | null; verification_result: string | null; verification_done: boolean
+  source?: string
 }
 interface Group { title: string; item_id: number | null; events: Evidence[] }
 interface Weekly {
@@ -24,10 +26,13 @@ function localDate(date: Date) {
 }
 const day = ref(localDate(new Date()))
 const project = ref<number | ''>('')
+const route = useRoute()
+const mine = ref(route.query.scope === 'mine')
+watch(() => route.query.scope, value => { mine.value = value === 'mine' })
 const { data: projects } = useAsync(() => api.listProjects(true))
 const { data: status } = useAsync(() => api.agentStatus())
 const ready = computed(() => status.value?.enabled && status.value.key_configured && status.value.cli_available)
-const scope = computed(() => ({day: day.value || undefined, project_id: project.value || undefined}))
+const scope = computed(() => ({day: day.value || undefined, project_id: project.value || undefined, scope: mine.value ? 'mine' : 'all'}))
 const { data, error, loading, run } = useAsync(() => get<Weekly>('/work-review/weekly' + qs(scope.value)))
 const candidates = ref<Candidates | null>(null)
 const drafting = ref(false)
@@ -112,7 +117,7 @@ function download() {
   for (const g of report.groups) {
     lines.push('', '### ' + g.title)
     for (const e of g.events) {
-      lines.push('- ' + e.occurred_at.slice(0,10) + ' · #' + e.id + ' ' + e.summary)
+      lines.push('- ' + e.occurred_at.slice(0,10) + ' · #' + e.id + ' ' + e.summary + (e.source ? ' [' + e.source + ']' : ''))
       if (e.verification_result) lines.push('  Verification (' + (e.verification_done ? 'confirmed' : 'pending') + '): ' + e.verification_result)
       if (e.evidence_url) lines.push('  ' + e.evidence_url)
     }
@@ -129,11 +134,12 @@ function download() {
 <template>
   <h1>Weekly review</h1>
   <div class="form-card">
-    <div class="form-grid-2">
+    <div class="form-grid-3">
       <label class="field">Week containing<input v-model="day" type="date" /></label>
       <label class="field">Project<select v-model="project"><option value="">All projects</option>
         <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select></label>
+      <label class="field">Scope<select v-model="mine"><option :value="false">All activity</option><option :value="true">Mine only</option></select></label>
     </div>
     <div class="card-actions">
       <button class="ghost-btn" @click="moveWeek(-7)">Previous week</button>
@@ -200,6 +206,7 @@ function download() {
       <h3><RouterLink v-if="g.item_id" :to="'/work-items/'+g.item_id">{{g.title}}</RouterLink><template v-else>{{g.title}}</template></h3>
       <ul><li v-for="e in g.events" :key="e.id">
         <RouterLink :to="'/event/'+e.id">{{e.summary || 'Event #'+e.id}}</RouterLink>
+        <span v-if="e.source" class="source-badge" :class="`src-${e.source}`">{{ e.source }}</span>
         <span class="meta"> · {{e.occurred_at.slice(0,10)}} · {{e.actor || e.source_agent || e.event_type}}</span>
         <p v-if="e.verification_result">{{e.verification_done ? 'Verified' : 'Pending verification'}} · {{e.verification_result}}</p>
       </li></ul>
@@ -212,4 +219,7 @@ function download() {
 .card, .form-card { margin-block: .75rem; overflow-wrap:anywhere; }
 .card h3 { margin-top:0; }
 li { margin-block:.5rem; }
+.source-badge { font-size: .68rem; padding: 1px 6px; border-radius: 999px; margin-right: 4px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-3); }
+.src-jira { color: #2563eb; }
+.src-bitbucket { color: #059669; }
 </style>

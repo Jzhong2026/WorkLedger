@@ -41,6 +41,24 @@ def test_weekly_includes_merged_pr_by_update_window(conn):
     assert 1 in ids and 2 not in ids and 3 not in ids
 
 
+def test_weekly_ignores_malformed_bitbucket_anchor_outside_window(conn):
+    outside_week = (date.today() - timedelta(days=365)).isoformat() + "T00:00:00+00:00"
+    events.create_event(conn, EventCreate(
+        event_type="pr_created", occurred_at=datetime.fromisoformat(outside_week),
+        repo="transfinderorg/core", pr_number=999, summary="malformed PR anchor",
+        source_key="bitbucket:transfinderorg/core:pr:999", source_agent="bitbucket-sync",
+        extra_json="{bad json",
+    ))
+    normal = events.create_event(conn, EventCreate(
+        event_type="manual", occurred_at=datetime.now(UTC), summary="normal event",
+    ))
+
+    result = work_review.weekly_review(conn)
+
+    assert normal["id"] in {e["id"] for g in result["groups"] for e in g["events"]}
+    assert all(e["pr_number"] != 999 for g in result["groups"] for e in g["events"])
+
+
 @pytest.fixture()
 def bb(monkeypatch, conn):
     monkeypatch.setattr(settings, "atlassian_user_email", "j@example.com")

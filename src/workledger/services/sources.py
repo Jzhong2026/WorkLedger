@@ -59,4 +59,7 @@ def is_mine_row(source_agent: str | None, extra_json: str | None,
         return False
     if extra.get("author_uuid") == uuid:
         return True
-    return any(r.get("uuid") == uuid for r in extra.get("reviewers") or [] if isinstance(r, dict))
+    reviewers = extra.get("reviewers")
+    if not isinstance(reviewers, list):
+        return False
+    return any(r.get("uuid") == uuid for r in reviewers if isinstance(r, dict))

@@ -39,6 +39,16 @@ def test_is_mine_row():
     assert sources.is_mine_row("jira-import", None, None, None) is False
 
 
+def test_is_mine_row_non_list_reviewers_match_sql_no_match():
+    for reviewers in (1, "not-a-list", {"uuid": "{jason}"}):
+        extra_json = json.dumps({"author_uuid": "{other}", "reviewers": reviewers})
+        assert sources.is_mine_row("bitbucket-sync", extra_json, "acc-jason", "{jason}") is False
+    assert sources.is_mine_row(
+        "bitbucket-sync", '{"author_uuid":"{other}","reviewers":[{"uuid":"{jason}"}]}',
+        "acc-jason", "{jason}",
+    ) is True
+
+
 def test_search_events_scope_mine(conn):
     _identities(conn)
     mine_ticket = _event(conn, "mine ticket", "jira-import", {"assignee_account_id": "acc-jason"}, jira_key="RW-1")

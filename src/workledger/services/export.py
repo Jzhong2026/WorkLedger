@@ -8,6 +8,7 @@ from typing import Literal
 
 from ..config import settings
 from . import events, retrospectives
+from .sources import event_source
 
 Period = Literal["week", "month", "quarter", "year", "all"]
 _PAGE_SIZE = 100
@@ -295,6 +296,23 @@ def _render_export(
                 raise ValueError("Model input budget is too small to describe the retrospective.")
             budget = max_chars - overhead
         for key, heading, fetch, rows, total in rendered:
+            if key == "events" and max_chars is None:
+                all_rows = list(rows)
+                page = 1
+                while page * _PAGE_SIZE < total:
+                    page += 1
+                    more, _ = fetch(conn, page=page, **{**window, "scope": scope})
+                    all_rows.extend(more)
+                blocks = []
+                for src, sub in (("human", "Human records"), ("jira", "Jira snapshots"), ("bitbucket", "Bitbucket PRs")):
+                    src_rows = [r for r in all_rows if event_source(r.get("source_agent")) == src]
+                    if src_rows:
+                        blocks.append(f"### {sub} ({len(src_rows)})")
+                        blocks.extend(_render_record(conn, key, r) for r in src_rows)
+                included[key] = len(all_rows)
+                parts.append(f"## {heading} ({total})")
+                parts.append("\n\n".join(blocks) if blocks else "_None recorded in this period._")
+                continue
             blocks = []
             page = 1
             while rows:

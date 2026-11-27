@@ -71,6 +71,7 @@ def get_insights(
 
     by_type = chart(
         "SELECT e.event_type AS label, COUNT(*) AS value FROM work_events e WHERE {where} "
+        "AND COALESCE(e.source_agent, '') NOT IN ('jira-import', 'bitbucket-sync') "
         "GROUP BY e.event_type ORDER BY value DESC, label",
         lambda row: {"event_type": row["label"]},
     )
@@ -95,6 +96,12 @@ def get_insights(
         f"SELECT e.root_cause AS label, COUNT(*) AS value FROM work_events e WHERE {{where}} AND {cause} "
         "GROUP BY e.root_cause ORDER BY value DESC, label LIMIT 8",
         lambda row: {"root_cause": row["label"]},
+    )
+    by_source = chart(
+        "SELECT CASE WHEN e.source_agent = 'jira-import' THEN 'jira' "
+        "WHEN e.source_agent = 'bitbucket-sync' THEN 'bitbucket' ELSE 'human' END AS label, "
+        "COUNT(*) AS value FROM work_events e WHERE {where} GROUP BY label ORDER BY value DESC, label",
+        lambda row: {},
     )
 
     acc_where, acc_params = _where(scope, "a.occurred_at", "e.project_id")
@@ -130,6 +137,7 @@ def get_insights(
         "by_project": by_project,
         "by_month": by_month,
         "root_causes": root_causes,
+        "by_source": by_source,
         "todo_status": todo_status,
         "root_cause_confirmation": {
             "confirmed": event_counts["confirmed"],

@@ -7,6 +7,7 @@ from datetime import date, timedelta
 
 from .. import agent
 from ..db import DatabaseError
+from .sources import event_source
 
 # An event can be referenced by multiple handoffs. Choose a single reporting item
 # inside the selected project so the contribution is counted once.
@@ -63,7 +64,7 @@ def _weekly_snapshot(conn: sqlite3.Connection, day: date, project_id: int | None
         else:
             key, title = ("event", row["id"]), row["summary"] or f"Event #{row['id']}"
         group = groups.setdefault(key, {"title": title, "item_id": row["item_id"], "events": []})
-        group["events"].append(dict(row))
+        group["events"].append({**dict(row), "source": event_source(row["source_agent"])})
 
     reviewed = {}
     for table in ("accomplishments", "cases"):

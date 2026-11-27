@@ -35,8 +35,7 @@ def mine_predicate(conn: sqlite3.Connection) -> tuple[str, list]:
     缺失时对应参数为 None → 分支不匹配（不猜）。"""
 ```
 
-SQL 片段（位置参数 ?，与 search_events/insights 一致；weekly 查询随之从命名参数转为位置参数——
-SQLite 不允许混用）：
+SQL 片段（位置参数 ?，与 search_events/insights 一致）：
 ```sql
 (
   COALESCE(source_agent, '') NOT IN ('jira-import', 'bitbucket-sync')
@@ -60,7 +59,9 @@ SQLite 不允许混用）：
   counts 在过滤集上重算；todos/work_items 不变（本就是个人记录）；响应加 `"scope"` 字段。
 - **export**：`export_markdown(conn, period, *, today=None, scope="all")` → events 段经
   search_events(scope=…) 过滤；accomplishments/cases/lessons/lesson_uses 段不变（人工策展记录）。
-- **weekly**：`weekly_review(conn, day=None, project_id=None, scope="all")` → WHERE 追加谓词。
+- **weekly**：`weekly_review(conn, day=None, project_id=None, scope="all")`。weekly 无分页，
+  用 Python 后过滤：SELECT 加 `e.extra_json`，取回行后经 `sources.is_mine_row(source_agent, extra_json, account_id, uuid)`
+  过滤（纯函数，可单测）；SQL 保持命名参数不动。accomplishments/cases/lessons 段不变。
 - MCP：`get_project_summary(key, window="7d", scope="all")`、`get_weekly_review(day, project_id, scope="all")`、
   `export_retrospective(period, scope="all")` 加参。
 - 前端 WeeklyView 加 Mine/All 切换（T7）。

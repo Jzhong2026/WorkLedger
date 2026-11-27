@@ -83,3 +83,18 @@ def test_merge_accomplishments_can_be_disabled(conn, bb, monkeypatch):
     recent = datetime.now(UTC).isoformat()
     sync_bitbucket.sync_bitbucket(conn, client=_client([_pr("MERGED", recent)]))
     assert conn.execute("SELECT COUNT(*) FROM accomplishments").fetchone()[0] == 0
+
+
+def test_unchanged_merged_anchor_backfills_accomplishment(conn, bb):
+    # An anchor already MERGED before this feature shipped re-syncs as "unchanged";
+    # its merge accomplishment must still be backfilled, idempotently.
+    recent = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    _anchor(conn, 9, "MERGED", recent)
+    assert conn.execute("SELECT COUNT(*) FROM accomplishments").fetchone()[0] == 0
+    sync_bitbucket.sync_bitbucket(conn, client=_client([_pr("MERGED", recent)]))
+    rows = conn.execute("SELECT * FROM accomplishments").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["source_key"] == "bitbucket-merge:transfinderorg/core:pr:9"
+    assert rows[0]["event_id"] is not None
+    sync_bitbucket.sync_bitbucket(conn, client=_client([_pr("MERGED", recent)]))
+    assert conn.execute("SELECT COUNT(*) FROM accomplishments").fetchone()[0] == 1

@@ -57,15 +57,13 @@ def _fetch_prs(client: httpx.Client, workspace: str, repo: str, my_uuid: str, cu
     return [pr for pr in distinct.values() if datetime.fromisoformat(pr["updated_on"]) >= cutoff]
 
 
-def _upsert_pr(conn, pr: dict, repo_full: str, project_id: int | None, pattern: re.Pattern,
-               merges: list[dict] | None = None) -> str:
+def _upsert_pr(conn, pr: dict, repo_full: str, project_id: int | None, pattern: re.Pattern) -> str:
     pr_id = pr["id"]
     source_key = f"bitbucket:{repo_full}:pr:{pr_id}"
     original = conn.execute("SELECT * FROM work_events WHERE source_key=?", (source_key,)).fetchone()
     if original is not None and original["source_agent"] != "bitbucket-sync":
         raise ValueError(f"PR {repo_full}#{pr_id} belongs to a WorkLedger record created outside the sync.")
     metadata = jira_import._metadata(original["extra_json"]) if original is not None else {}
-    prev_state = metadata.get("state")
     updated = datetime.fromisoformat(pr["updated_on"])
     previous = metadata.get("bitbucket_updated")
     if previous and datetime.fromisoformat(previous) >= updated:
@@ -101,12 +99,6 @@ def _upsert_pr(conn, pr: dict, repo_full: str, project_id: int | None, pattern: 
             detail=detail, evidence_url=url, extra_json=extra,
         ))
         conn.execute("UPDATE work_events SET project_id=? WHERE id=?", (project_id, event["id"]))
-        event_id = event["id"]
-        if merges is not None and pr["state"] == "MERGED" and (original is None or prev_state != "MERGED"):
-            merges.append({"pr_id": pr_id, "title": title, "updated_on": pr["updated_on"],
-                           "url": url, "event_id": event_id, "repo_full": repo_full,
-                           "author": metadata.get("author"),
-                           "branches": f"{metadata.get('source_branch') or '?'} → {metadata.get('target_branch') or '?'}"})
         return "created"
     edited = jira_import._edited_fields(conn, original)
     changes = {k: v for k, v in {"summary": title, "detail": detail}.items() if k not in edited}
@@ -125,12 +117,6 @@ def _upsert_pr(conn, pr: dict, repo_full: str, project_id: int | None, pattern: 
         f"UPDATE work_events SET {cols}, updated_at=datetime('now') WHERE id=?",
         (*changes.values(), original["id"]),
     )
-    event_id = original["id"]
-    if merges is not None and pr["state"] == "MERGED" and (original is None or prev_state != "MERGED"):
-        merges.append({"pr_id": pr_id, "title": title, "updated_on": pr["updated_on"],
-                       "url": url, "event_id": event_id, "repo_full": repo_full,
-                       "author": metadata.get("author"),
-                       "branches": f"{metadata.get('source_branch') or '?'} → {metadata.get('target_branch') or '?'}"})
     return "updated"
 
 
@@ -169,23 +155,38 @@ def sync_bitbucket(conn: sqlite3.Connection, *, client: httpx.Client | None = No
             try:
                 prs = _fetch_prs(client, workspace, repo, my_uuid, cutoff)
                 counts = {"created": 0, "updated": 0, "unchanged": 0}
-                merges: list[dict] = []
+                repo_full = f"{workspace}/{repo}"
                 with write_transaction(conn):
                     for pr in prs:
-                        counts[_upsert_pr(conn, pr, f"{workspace}/{repo}", project_id, pattern, merges)] += 1
-                # Accomplishments are written outside write_transaction: create_accomplishment
-                # uses `with conn:` and would otherwise commit the outer transaction early.
+                        counts[_upsert_pr(conn, pr, repo_full, project_id, pattern)] += 1
+                # Record a merge accomplishment for every MERGED anchor, idempotently by
+                # source_key. This covers new anchors, OPEN→MERGED transitions, and anchors
+                # already MERGED before this feature shipped (which re-sync as "unchanged").
+                # Written outside write_transaction: create_accomplishment uses `with conn:`
+                # and would otherwise commit the outer transaction early.
+                merges_recorded = 0
                 if settings.sync_record_merge_accomplishments:
-                    for m in merges:
+                    merged_rows = conn.execute(
+                        "SELECT id, pr_number, summary, extra_json FROM work_events "
+                        "WHERE source_agent='bitbucket-sync' AND event_type='pr_created' AND repo=? "
+                        "AND json_extract(extra_json, '$.state')='MERGED'",
+                        (repo_full,),
+                    ).fetchall()
+                    for row in merged_rows:
+                        meta = json.loads(row["extra_json"] or "{}")
+                        merge_key = f"bitbucket-merge:{repo_full}:pr:{row['pr_number']}"
+                        if conn.execute("SELECT 1 FROM accomplishments WHERE source_key=?", (merge_key,)).fetchone():
+                            continue
                         retrospectives.create_accomplishment(conn, AccomplishmentCreate(
-                            title=f"PR #{m['pr_id']} merged: {m['title']}",
-                            description=f"{m['repo_full']} · {m['author'] or '?'} · {m['branches']}",
-                            occurred_at=datetime.fromisoformat(m["updated_on"]),
-                            impact_evidence_url=m["url"], event_id=m["event_id"],
-                            tags="pr,merged",
-                            source_key=f"bitbucket-merge:{m['repo_full']}:pr:{m['pr_id']}",
+                            title=f"PR #{row['pr_number']} merged: {row['summary']}",
+                            description=f"{repo_full} · {meta.get('author') or '?'} · "
+                                        f"{meta.get('source_branch') or '?'} → {meta.get('target_branch') or '?'}",
+                            occurred_at=datetime.fromisoformat(meta["bitbucket_updated"]),
+                            impact_evidence_url=meta.get("url"), event_id=row["id"],
+                            tags="pr,merged", source_key=merge_key,
                         ))
-                detail = {**counts, "prs": len(prs), "my_uuid": my_uuid, "merges_recorded": len(merges)}
+                        merges_recorded += 1
+                detail = {**counts, "prs": len(prs), "my_uuid": my_uuid, "merges_recorded": merges_recorded}
                 sync_state.record_success(conn, source, detail)
                 results[source] = {"ok": True, **detail}
             except (httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError,

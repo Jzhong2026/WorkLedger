@@ -7,7 +7,7 @@ import sqlite3
 from datetime import date, timedelta
 
 from ..config import settings
-from . import jira_import, sync_state
+from . import jira_import, sources, sync_state
 
 
 def parse_window(window: str) -> int:
@@ -28,7 +28,9 @@ def _ticket(row: sqlite3.Row, item_ids: dict) -> dict:
     }
 
 
-def project_summary(conn: sqlite3.Connection, key: str, window: str = "7d") -> dict:
+def project_summary(conn: sqlite3.Connection, key: str, window: str = "7d", scope: str = "all") -> dict:
+    if scope not in ("all", "mine"):
+        raise ValueError("Scope must be 'all' or 'mine'.")
     days = parse_window(window)
     project = conn.execute("SELECT * FROM projects WHERE key=?", (key.strip().upper(),)).fetchone()
     if project is None:
@@ -44,14 +46,17 @@ def project_summary(conn: sqlite3.Connection, key: str, window: str = "7d") -> d
             (project["id"],),
         )
     }
-    tickets = [
-        _ticket(row, item_ids)
-        for row in conn.execute(
-            "SELECT jira_key, summary, extra_json FROM work_events "
-            "WHERE source_agent='jira-import' AND jira_key IS NOT NULL AND project_id=? ORDER BY jira_key",
-            (project["id"],),
-        )
-    ]
+    states = sync_state.get_states(conn)
+    account_id, my_uuid = sources.my_identities(conn)
+    ticket_rows = conn.execute(
+        "SELECT jira_key, summary, extra_json FROM work_events "
+        "WHERE source_agent='jira-import' AND jira_key IS NOT NULL AND project_id=? ORDER BY jira_key",
+        (project["id"],),
+    ).fetchall()
+    if scope == "mine":
+        ticket_rows = [r for r in ticket_rows
+                       if json.loads(r["extra_json"] or "{}").get("assignee_account_id") == account_id]
+    tickets = [_ticket(row, item_ids) for row in ticket_rows]
     by_status: dict[str, int] = {}
     for ticket in tickets:
         name = ticket["status"] or "?"
@@ -59,12 +64,6 @@ def project_summary(conn: sqlite3.Connection, key: str, window: str = "7d") -> d
     open_tickets = [t for t in tickets if not t["done"]]
     changed = [t for t in tickets if t["updated"] and start <= t["updated"][:10] <= today_iso]
 
-    states = sync_state.get_states(conn)
-    my_uuid = next(
-        (s["detail"].get("my_uuid") for s in states.values()
-         if s["source"].startswith("bitbucket:") and s["detail"].get("my_uuid")),
-        None,
-    )
     prs = []
     if key.strip().upper() == settings.sync_bitbucket_project.upper():
         repos = [f"{settings.sync_bitbucket_workspace}/{r.strip()}" for r in settings.sync_bitbucket_repos.split(",") if r.strip()]
@@ -92,6 +91,8 @@ def project_summary(conn: sqlite3.Connection, key: str, window: str = "7d") -> d
                     "needs_my_review": state == "OPEN" and mine_review is not None and not mine_review.get("approved"),
                 },
             })
+    if scope == "mine":
+        prs = [p for p in prs if p["mine"]["authored"] or p["mine"]["reviewing"]]
     pr_counts = {
         "open": sum(1 for p in prs if p["state"] == "OPEN"),
         "merged": sum(1 for p in prs if p["state"] == "MERGED"),
@@ -125,6 +126,7 @@ def project_summary(conn: sqlite3.Connection, key: str, window: str = "7d") -> d
     return {
         "project": {"id": project["id"], "key": project["key"], "name": project["name"]},
         "window": {"days": days, "from": start, "to": today_iso},
+        "scope": scope,
         "generated_at": sync_state.utc_now_iso(),
         "tickets": {
             "counts": {"open": len(open_tickets), "done": len(tickets) - len(open_tickets), "by_status": by_status},

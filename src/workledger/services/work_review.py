@@ -18,21 +18,24 @@ _ITEM_FOR_EVENT = """
 
 def weekly_review(
     conn: sqlite3.Connection, day: date | None = None, project_id: int | None = None,
+    scope: str = "all",
 ) -> dict:
+    if scope not in ("all", "mine"):
+        raise ValueError("Scope must be 'all' or 'mine'.")
     conn.execute("SAVEPOINT weekly_review")
     try:
-        return _weekly_snapshot(conn, day or date.today(), project_id)
+        return _weekly_snapshot(conn, day or date.today(), project_id, scope)
     finally:
         conn.execute("RELEASE weekly_review")
 
 
-def _weekly_snapshot(conn: sqlite3.Connection, day: date, project_id: int | None) -> dict:
+def _weekly_snapshot(conn: sqlite3.Connection, day: date, project_id: int | None, scope: str = "all") -> dict:
     start = day - timedelta(days=day.weekday())
     stop = start + timedelta(days=7)
     params = {"start": start.isoformat(), "stop": stop.isoformat(), "project": project_id}
     rows = conn.execute(f"""
         SELECT e.id, e.summary, e.event_type, e.occurred_at, e.repo, e.pr_number,
-               e.jira_key, e.source_agent, e.evidence_url, e.verification_done,
+               e.jira_key, e.source_agent, e.extra_json, e.evidence_url, e.verification_done,
                e.verification_result, p.jira_key AS parent_key,
                i.id AS item_id, i.title AS item_title, h.actor AS actor
         FROM work_events e
@@ -42,7 +45,11 @@ def _weekly_snapshot(conn: sqlite3.Connection, day: date, project_id: int | None
         WHERE e.occurred_at >= :start AND e.occurred_at < :stop
           AND (:project IS NULL OR i.id IS NOT NULL OR e.project_id = :project)
         ORDER BY e.occurred_at DESC, e.id DESC
-    """, params)
+    """, params).fetchall()
+    if scope == "mine":
+        from . import sources
+        account_id, uuid = sources.my_identities(conn)
+        rows = [r for r in rows if sources.is_mine_row(r["source_agent"], r["extra_json"], account_id, uuid)]
     groups: dict[tuple, dict] = {}
     for row in rows:
         if row["item_id"]:

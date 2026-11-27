@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import ValidationError
@@ -491,11 +492,11 @@ def search_expanded(data: ExpandedSearchRequest):
 # --- Export ---
 
 @router.get("/export")
-def export_markdown(period: Period = "year"):
+def export_markdown(period: Period = "year", scope: Literal["all", "mine"] = "all"):
     from fastapi.responses import PlainTextResponse
 
     from ..services import export
-    md = export.export_markdown(_conn(), period)
+    md = export.export_markdown(_conn(), period, scope=scope)
     return PlainTextResponse(md, media_type="text/markdown", headers={
         "Content-Disposition": f'attachment; filename="workledger-{period}.md"'
     })
@@ -508,7 +509,7 @@ def export_narrative(data: NarrativeRequest):
 
     today = date.today()
     try:
-        md, coverage = export.narrative_input(_conn(), data.period, today=today)
+        md, coverage = export.narrative_input(_conn(), data.period, today=today, scope=data.scope)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     result = synthesize_narrative(md, data.period, model=data.model)

@@ -33,9 +33,9 @@ def mine_predicate(conn: sqlite3.Connection, alias: str = "") -> tuple[str, list
     p = f"{alias}." if alias else ""
     sql = f"""(
   COALESCE({p}source_agent, '') NOT IN ('jira-import', 'bitbucket-sync')
-  OR ({p}source_agent = 'jira-import'
+  OR ({p}source_agent = 'jira-import' AND json_valid({p}extra_json)
       AND json_extract({p}extra_json, '$.assignee_account_id') = ?)
-  OR ({p}source_agent = 'bitbucket-sync' AND (
+  OR ({p}source_agent = 'bitbucket-sync' AND json_valid({p}extra_json) AND (
         json_extract({p}extra_json, '$.author_uuid') = ?
         OR EXISTS (SELECT 1 FROM json_each(json_extract({p}extra_json, '$.reviewers'))
                    WHERE json_extract(value, '$.uuid') = ?)))

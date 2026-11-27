@@ -263,6 +263,7 @@ def _render_record(conn: sqlite3.Connection, key: str, record: dict) -> str:
 
 def _render_export(
     conn: sqlite3.Connection, period: str, *, max_chars: int | None = None, today: date | None = None,
+    scope: str = "all",
 ) -> tuple[str, dict]:
     date_from, date_to = period_range(period, today=today)
     title = f"# WorkLedger Retrospective — {period}\n\n_{date_from} → {date_to}_"
@@ -274,7 +275,8 @@ def _render_export(
     # A read snapshot keeps totals and all later pages consistent with the first page.
     conn.execute("SAVEPOINT retrospective_export")
     try:
-        first_pages = [fetch(conn, **window) for _, _, fetch in _SECTIONS]
+        first_pages = [fetch(conn, **({**window, "scope": scope} if key == "events" else window))
+                       for key, _, fetch in _SECTIONS]
         sections = zip(_SECTIONS, first_pages, strict=True)
         rendered = []
         for (key, heading, fetch), (rows, total) in sections:
@@ -306,7 +308,7 @@ def _render_export(
                 if page * _PAGE_SIZE >= total or (max_chars is not None and budget < 32):
                     break
                 page += 1
-                rows, _ = fetch(conn, page=page, **window)
+                rows, _ = fetch(conn, page=page, **({**window, "scope": scope} if key == "events" else window))
             included[key] = len(blocks)
             count = str(total) if len(blocks) == total else f"{len(blocks)} of {total} included"
             parts.append(f"## {heading} ({count})")
@@ -319,8 +321,10 @@ def _render_export(
     return "\n\n".join(parts) + "\n", {"included": included, "totals": totals}
 
 
-def export_markdown(conn: sqlite3.Connection, period: str = "year", *, today: date | None = None) -> str:
-    markdown, _ = _render_export(conn, period, today=today)
+def export_markdown(
+    conn: sqlite3.Connection, period: str = "year", *, today: date | None = None, scope: str = "all",
+) -> str:
+    markdown, _ = _render_export(conn, period, today=today, scope=scope)
     return markdown
 
 
@@ -330,9 +334,10 @@ def narrative_input(
     *,
     max_chars: int = _NARRATIVE_CHARS,
     today: date | None = None,
+    scope: str = "all",
 ) -> tuple[str, dict]:
     """Return complete records within the model budget and the exact section coverage."""
-    markdown, coverage = _render_export(conn, period, max_chars=max_chars, today=today)
+    markdown, coverage = _render_export(conn, period, max_chars=max_chars, today=today, scope=scope)
     if not any(coverage["totals"].values()):
         raise ValueError("There are no records in this period.")
     if not any(coverage["included"].values()):

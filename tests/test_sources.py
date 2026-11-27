@@ -62,3 +62,15 @@ def test_search_events_mine_without_identities_keeps_human(conn):
     items, total = events.search_events(conn, scope="mine")
     assert total == 1
     assert items[0]["id"] == human["id"]
+
+
+def test_search_events_mine_tolerates_malformed_extra_json(conn):
+    _identities(conn)
+    events.create_event(conn, EventCreate(
+        event_type="manual", occurred_at=datetime.now(UTC), summary="malformed ticket",
+        source_agent="jira-import", jira_key="RW-9", extra_json="{bad json",
+    ))
+    human = _event(conn, "human note", None)
+    items, total = events.search_events(conn, scope="mine")
+    assert total == 1
+    assert items[0]["id"] == human["id"]

@@ -497,11 +497,11 @@ def search_semantic(question: str) -> str:
 # --- Export ---
 
 @mcp.tool()
-def export_retrospective(period: str = "year") -> str:
-    """Export a structured Markdown retrospective (accomplishments, cases, events + evidence). period: week|month|quarter|year|all."""
+def export_retrospective(period: str = "year", scope: str = "all") -> str:
+    """Export a structured Markdown retrospective (accomplishments, cases, events + evidence). period: week|month|quarter|year|all. scope: all|mine (mine keeps only my sync events)."""
     try:
         from .services import export
-        return export.export_markdown(_conn(), period)
+        return export.export_markdown(_conn(), period, scope=scope)
     except _TOOL_ERRORS as e:
         return _err(e)
 
@@ -592,11 +592,11 @@ def record_work_handoff(item_id: int, data: HandoffCreate) -> str:
 
 
 @mcp.tool()
-def get_weekly_review(day: date | None = None, project_id: int | None = None) -> str:
-    """Read a local Monday–Sunday report with grouped evidence, confirmed accomplishments, cases and lesson use."""
+def get_weekly_review(day: date | None = None, project_id: int | None = None, scope: str = "all") -> str:
+    """Read a local Monday–Sunday report with grouped evidence, confirmed accomplishments, cases and lesson use. scope: all|mine (mine keeps only my sync events)."""
     from .services import work_review
     try:
-        return json.dumps(work_review.weekly_review(_conn(), day, project_id), ensure_ascii=False)
+        return json.dumps(work_review.weekly_review(_conn(), day, project_id, scope), ensure_ascii=False)
     except _TOOL_ERRORS as e:
         return _err(e)
 
@@ -652,11 +652,11 @@ def sync_bitbucket() -> str:
 
 
 @mcp.tool()
-def get_project_summary(key: str, window: str = "7d") -> str:
-    """One-call project briefing data: tickets, PRs, todos, work items, counts and sync freshness."""
+def get_project_summary(key: str, window: str = "7d", scope: str = "all") -> str:
+    """One-call project briefing data: tickets, PRs, todos, work items, counts and sync freshness. scope: all|mine (mine keeps only my tickets/PRs)."""
     from .services import summary
     try:
-        return json.dumps(summary.project_summary(_conn(), key, window), ensure_ascii=False)
+        return json.dumps(summary.project_summary(_conn(), key, window, scope), ensure_ascii=False)
     except KeyError as e:
         return json.dumps({"error": str(e)})
     except _TOOL_ERRORS as e:

@@ -84,3 +84,4 @@ class ExpandedSearchRequest(SearchPageRequest):
 class NarrativeRequest(WriteInput):
     period: Period = "year"
     model: str | None = None
+    scope: Literal["all", "mine"] = "all"

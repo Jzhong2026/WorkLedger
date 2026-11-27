@@ -1,5 +1,6 @@
 """Evidence-led weekly reporting and optional read-only AI briefings."""
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
@@ -21,8 +22,9 @@ class BriefingRequest(BaseModel):
 
 
 @router.get("/weekly")
-def weekly(day: date | None = None, project_id: int | None = Query(None, gt=0)):
-    return work_review.weekly_review(_conn(), day, project_id)
+def weekly(day: date | None = None, project_id: int | None = Query(None, gt=0),
+           scope: Literal["all", "mine"] = "all"):
+    return work_review.weekly_review(_conn(), day, project_id, scope)
 
 
 @router.post("/weekly/candidates")

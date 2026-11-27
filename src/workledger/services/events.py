@@ -171,9 +171,18 @@ def search_events(
     page_size: int = 20,
     keywords: list[str] | None = None,
     raw_match: str | None = None,
+    scope: str | None = None,
 ) -> tuple[list[dict], int]:
     conditions = []
     params: list = []
+
+    if scope not in (None, "all", "mine"):
+        raise ValueError("Scope must be 'all' or 'mine'.")
+    if scope == "mine":
+        from . import sources
+        mine_sql, mine_params = sources.mine_predicate(conn)
+        conditions.append(mine_sql)
+        params.extend(mine_params)
 
     if raw_match:
         conditions.append("id IN (SELECT rowid FROM work_events_fts WHERE work_events_fts MATCH ?)")
